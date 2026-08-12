@@ -7,6 +7,14 @@
 #include <mach-o/loader.h>
 #include <mach-o/nlist.h>
 
+#ifndef LC_SEGMENT_ARCH_DEPENDENT
+#ifdef __LP64__
+#define LC_SEGMENT_ARCH_DEPENDENT LC_SEGMENT_64
+#else
+#define LC_SEGMENT_ARCH_DEPENDENT LC_SEGMENT
+#endif
+#endif
+
 #ifdef __LP64__
 typedef struct mach_header_64 mach_header_t;
 typedef struct segment_command_64 segment_command_t;
