@@ -7,7 +7,7 @@
 #import "fishhook.h"
 
 // ==========================================
-// SPEEDHACK ENGINE (DIRECT BYPASS & ZERO-DRIFT ANCHOR)
+// SPEEDHACK ENGINE (PRECISION ANCHOR & SMOOTH REDUCTION)
 // ==========================================
 
 static float speed_factor = 1.0f;
@@ -31,29 +31,42 @@ static struct timeval anchor_fake_tv = {0, 0};
 FOUNDATION_EXPORT void set_speed_factor(float factor) {
     os_unfair_lock_lock(&speed_lock);
     
-    // Chốt mốc mach_absolute_time tại thời điểm đổi tốc độ
+    // Nếu chuyển về 1.0, reset toàn bộ mốc gốc để Direct Bypass hoạt động tức thì
+    if (factor == 1.0f) {
+        anchor_real_mach = 0;
+        anchor_fake_mach = 0;
+        anchor_real_cf = 0;
+        anchor_fake_cf = 0;
+        anchor_real_tv = (struct timeval){0, 0};
+        anchor_fake_tv = (struct timeval){0, 0};
+        speed_factor = 1.0f;
+        os_unfair_lock_unlock(&speed_lock);
+        return;
+    }
+
+    // 1. Chốt mốc mach_absolute_time tại tốc độ cũ trước khi áp dụng tốc độ mới
     if (orig_mach_absolute_time) {
         uint64_t real_now = orig_mach_absolute_time();
         if (anchor_real_mach == 0) {
             anchor_fake_mach = real_now;
-        } else {
+        } else if (real_now > anchor_real_mach) {
             anchor_fake_mach += (uint64_t)((real_now - anchor_real_mach) * speed_factor);
         }
         anchor_real_mach = real_now;
     }
     
-    // Chốt mốc CFAbsoluteTimeGetCurrent
+    // 2. Chốt mốc CFAbsoluteTimeGetCurrent
     if (orig_CFAbsoluteTimeGetCurrent) {
         CFAbsoluteTime real_now = orig_CFAbsoluteTimeGetCurrent();
         if (anchor_real_cf == 0) {
             anchor_fake_cf = real_now;
-        } else {
+        } else if (real_now > anchor_real_cf) {
             anchor_fake_cf += (real_now - anchor_real_cf) * speed_factor;
         }
         anchor_real_cf = real_now;
     }
 
-    // Chốt mốc gettimeofday
+    // 3. Chốt mốc gettimeofday
     if (orig_gettimeofday) {
         struct timeval real_now;
         if (orig_gettimeofday(&real_now, NULL) == 0) {
@@ -62,15 +75,17 @@ FOUNDATION_EXPORT void set_speed_factor(float factor) {
             } else {
                 double delta = (real_now.tv_sec - anchor_real_tv.tv_sec) + 
                                (real_now.tv_usec - anchor_real_tv.tv_usec) / 1000000.0;
-                double fake_delta = delta * speed_factor;
-                long sec_add = (long)fake_delta;
-                long usec_add = (long)((fake_delta - sec_add) * 1000000.0);
-                
-                anchor_fake_tv.tv_sec += sec_add;
-                anchor_fake_tv.tv_usec += usec_add;
-                if (anchor_fake_tv.tv_usec >= 1000000) {
-                    anchor_fake_tv.tv_sec += 1;
-                    anchor_fake_tv.tv_usec -= 1000000;
+                if (delta > 0) {
+                    double fake_delta = delta * speed_factor;
+                    long sec_add = (long)fake_delta;
+                    long usec_add = (long)((fake_delta - sec_add) * 1000000.0);
+                    
+                    anchor_fake_tv.tv_sec += sec_add;
+                    anchor_fake_tv.tv_usec += usec_add;
+                    if (anchor_fake_tv.tv_usec >= 1000000) {
+                        anchor_fake_tv.tv_sec += 1;
+                        anchor_fake_tv.tv_usec -= 1000000;
+                    }
                 }
             }
             anchor_real_tv = real_now;
@@ -91,7 +106,6 @@ int my_gettimeofday(struct timeval *tv, struct timezone *tz) {
     if (ret != 0 || tv == NULL) return ret;
 
     os_unfair_lock_lock(&speed_lock);
-    // Bypass hoàn toàn khi 1.0x
     if (speed_factor == 1.0f) {
         os_unfair_lock_unlock(&speed_lock);
         return ret;
@@ -116,6 +130,8 @@ int my_gettimeofday(struct timeval *tv, struct timezone *tz) {
                 result.tv_usec -= 1000000;
             }
             *tv = result;
+        } else {
+            *tv = anchor_fake_tv;
         }
     }
     os_unfair_lock_unlock(&speed_lock);
@@ -128,7 +144,6 @@ CFAbsoluteTime my_CFAbsoluteTimeGetCurrent(void) {
     CFAbsoluteTime real_now = orig_CFAbsoluteTimeGetCurrent();
     
     os_unfair_lock_lock(&speed_lock);
-    // Bypass hoàn toàn khi 1.0x
     if (speed_factor == 1.0f) {
         os_unfair_lock_unlock(&speed_lock);
         return real_now;
@@ -141,6 +156,8 @@ CFAbsoluteTime my_CFAbsoluteTimeGetCurrent(void) {
         double delta = real_now - anchor_real_cf;
         if (delta > 0) {
             real_now = anchor_fake_cf + (delta * speed_factor);
+        } else {
+            real_now = anchor_fake_cf;
         }
     }
     os_unfair_lock_unlock(&speed_lock);
@@ -153,7 +170,6 @@ uint64_t my_mach_absolute_time(void) {
     uint64_t real_now = orig_mach_absolute_time();
 
     os_unfair_lock_lock(&speed_lock);
-    // Bypass hoàn toàn khi 1.0x
     if (speed_factor == 1.0f) {
         os_unfair_lock_unlock(&speed_lock);
         return real_now;
@@ -166,6 +182,8 @@ uint64_t my_mach_absolute_time(void) {
         if (real_now > anchor_real_mach) {
             uint64_t delta = real_now - anchor_real_mach;
             real_now = anchor_fake_mach + (uint64_t)(delta * speed_factor);
+        } else {
+            real_now = anchor_fake_mach;
         }
     }
     os_unfair_lock_unlock(&speed_lock);
