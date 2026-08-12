@@ -65,9 +65,9 @@ FOUNDATION_EXPORT float get_speed_factor(void);
         if (currentSpeed == 1.0f) {
             [_mainButton setTitle:@"⚡️" forState:UIControlStateNormal];
         } else {
-            [_mainButton setTitle:[NSString stringWithFormat:@"%.2fx", currentSpeed] forState:UIControlStateNormal];
+            [_mainButton setTitle:[NSString stringWithFormat:@"%.3fx", currentSpeed] forState:UIControlStateNormal];
         }
-        _mainButton.titleLabel.font = [UIFont systemFontOfSize:18 weight:UIFontWeightBold];
+        _mainButton.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
         [_mainButton addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
         [self addSubview:_mainButton];
 
@@ -96,7 +96,7 @@ FOUNDATION_EXPORT float get_speed_factor(void);
         [_sliderPanel addSubview:_speedSlider];
 
         // Label hiển thị 3 chữ số thập phân
-        _speedLabel = [[UILabel alloc] initWithFrame:CGRectMake(118, 8, 50, 30)];
+        _speedLabel = [[UILabel alloc] initWithFrame:CGRectMake(118, 8, 52, 30)];
         _speedLabel.text = [NSString stringWithFormat:@"%.3fx", currentSpeed];
         _speedLabel.textColor = [UIColor whiteColor];
         _speedLabel.font = [UIFont boldSystemFontOfSize:11];
@@ -179,7 +179,7 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     if (newStep == 1.0f) {
         [_mainButton setTitle:@"⚡️" forState:UIControlStateNormal];
     } else {
-        [_mainButton setTitle:[NSString stringWithFormat:@"%.2fx", newStep] forState:UIControlStateNormal];
+        [_mainButton setTitle:[NSString stringWithFormat:@"%.3fx", newStep] forState:UIControlStateNormal];
     }
     
     set_speed_factor(newStep);
