@@ -58,12 +58,7 @@ extern float get_speed_factor(void);
     if (self) {
         _isExpanded = NO;
         _currentSpeed = get_speed_factor();
-        if (fabsf(_currentSpeed - 1.05f) > 0.001f && 
-            fabsf(_currentSpeed - 1.10f) > 0.001f && 
-            fabsf(_currentSpeed - 2.00f) > 0.001f && 
-            fabsf(_currentSpeed - 5.00f) > 0.001f) {
-            _currentSpeed = 1.00f;
-        }
+        if (_currentSpeed <= 0.0f) _currentSpeed = 1.00f;
 
         // 1. Nút chính
         _mainButton = [UIButton buttonWithType:UIButtonTypeCustom];
@@ -86,7 +81,7 @@ extern float get_speed_factor(void);
         UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
         [self addGestureRecognizer:pan];
 
-        // 2. Bảng Nút Chọn Tốc Độ (Mở rộng 275px cho 5 nút)
+        // 2. Bảng Nút Chọn Tốc Độ (275px cho 5 nút)
         _presetPanel = [[UIView alloc] initWithFrame:CGRectMake(55, 2.5, 275, 45)];
         _presetPanel.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.14 alpha:0.95];
         _presetPanel.layer.cornerRadius = 12.0;
@@ -95,23 +90,18 @@ extern float get_speed_factor(void);
         _presetPanel.alpha = 0.0;
         _presetPanel.hidden = YES;
 
-        // Nút 1x
         _btn100 = [self createSpeedButtonWithTitle:@"1x" tag:100 frame:CGRectMake(8, 7.5, 45, 30)];
         [_presetPanel addSubview:_btn100];
 
-        // Nút 1.05x
         _btn105 = [self createSpeedButtonWithTitle:@"1.05x" tag:105 frame:CGRectMake(60, 7.5, 45, 30)];
         [_presetPanel addSubview:_btn105];
 
-        // Nút 1.1x
         _btn110 = [self createSpeedButtonWithTitle:@"1.1x" tag:110 frame:CGRectMake(112, 7.5, 45, 30)];
         [_presetPanel addSubview:_btn110];
 
-        // Nút 2x
         _btn200 = [self createSpeedButtonWithTitle:@"2x" tag:200 frame:CGRectMake(164, 7.5, 45, 30)];
         [_presetPanel addSubview:_btn200];
 
-        // Nút 5x
         _btn500 = [self createSpeedButtonWithTitle:@"5x" tag:500 frame:CGRectMake(216, 7.5, 45, 30)];
         [_presetPanel addSubview:_btn500];
 
@@ -135,7 +125,7 @@ extern float get_speed_factor(void);
 }
 
 - (void)updateMainButtonTitle {
-    if (_currentSpeed == 1.00f) {
+    if (fabsf(_currentSpeed - 1.00f) < 0.01f) {
         [_mainButton setTitle:@"⚡️1x" forState:UIControlStateNormal];
     } else {
         [_mainButton setTitle:[NSString stringWithFormat:@"%.2fx", _currentSpeed] forState:UIControlStateNormal];
@@ -151,7 +141,7 @@ extern float get_speed_factor(void);
         if (btn.tag == 200) speed = 2.00f;
         if (btn.tag == 500) speed = 5.00f;
 
-        if (fabsf(_currentSpeed - speed) < 0.001f) {
+        if (fabsf(_currentSpeed - speed) < 0.01f) {
             btn.backgroundColor = [UIColor colorWithRed:0.1 green:0.55 blue:1.0 alpha:1.0];
             [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
         } else {
@@ -186,6 +176,7 @@ extern float get_speed_factor(void);
     }
 }
 
+// XỬ LÝ NHẤN NÚT: Áp dụng ngay lập tức xuống Speedhack Engine
 - (void)speedButtonTapped:(UIButton *)sender {
     [self triggerHaptic];
     [self resetFadeTimer];
@@ -196,6 +187,9 @@ extern float get_speed_factor(void);
     else if (sender.tag == 110) _currentSpeed = 1.10f;
     else if (sender.tag == 200) _currentSpeed = 2.00f;
     else if (sender.tag == 500) _currentSpeed = 5.00f;
+
+    // ÉP TỐC ĐỘ MỚI LÊN ENGINE TỨC THÌ
+    set_speed_factor(_currentSpeed);
 
     [self updateButtonStates];
     [self updateMainButtonTitle];
@@ -272,8 +266,6 @@ extern float get_speed_factor(void);
 }
 
 - (void)dimMenu {
-    set_speed_factor(self.currentSpeed);
-
     if (self.isExpanded) {
         [self toggleMenu];
     }
