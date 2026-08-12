@@ -17,10 +17,17 @@ jobs:
       run: |
         clang -dynamiclib \
         -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
-        -arch arm64 \
-        Speedhack.m \
+        -arch arm64 -arch arm64e \
+        -miphoneos-version-min=14.0 \
+        -fobjc-arc \
+        -O3 \
+        Speedhack.m fishhook.c \
         -framework Foundation -framework CoreFoundation \
         -o Speedhack.dylib
+
+    - name: Ad-hoc Code Sign Dylib
+      run: |
+        codesign -f -s - Speedhack.dylib
 
     - name: Upload Dylib Artifact
       uses: actions/upload-artifact@v4
