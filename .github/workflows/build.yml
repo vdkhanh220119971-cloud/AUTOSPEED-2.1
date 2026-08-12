@@ -1,5 +1,5 @@
 name: Build iOS Dylib
- 
+
 on:
   push:
     branches: [ "main", "master" ]
@@ -21,8 +21,8 @@ jobs:
         -miphoneos-version-min=14.0 \
         -fobjc-arc \
         -O3 \
-        Speedhack.m fishhook.c \
-        -framework Foundation -framework CoreFoundation \
+        Speedhack.m SpeedhackMenu.m fishhook.c \
+        -framework Foundation -framework CoreFoundation -framework UIKit \
         -o Speedhack.dylib
 
     - name: Ad-hoc Code Sign Dylib
