@@ -1,8 +1,16 @@
 #import <UIKit/UIKit.h>
 #import <CoreGraphics/CoreGraphics.h>
 
-FOUNDATION_EXPORT void set_speed_factor(float factor);
-FOUNDATION_EXPORT float get_speed_factor(void);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+extern void set_speed_factor(float factor);
+extern float get_speed_factor(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 @interface SpeedhackMenu : UIView
 
@@ -29,6 +37,7 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     });
 }
 
+// Sửa cảnh báo Deprecated 'keyWindow' chuẩn iOS 13+
 + (UIWindow *)getKeyWindow {
     if (@available(iOS 13.0, *)) {
         for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
@@ -40,7 +49,7 @@ FOUNDATION_EXPORT float get_speed_factor(void);
             }
         }
     }
-    return [UIApplication sharedApplication].keyWindow;
+    return nil;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -138,7 +147,6 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     }
 }
 
-// Pass-through HitTest
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     if (self.hidden || self.alpha < 0.01) return nil;
 
@@ -164,7 +172,6 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     }
 }
 
-// Xử lý khi nhấn nút mốc tốc độ
 - (void)speedButtonTapped:(UIButton *)sender {
     [self triggerHaptic];
     [self resetFadeTimer];
@@ -174,11 +181,12 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     else if (sender.tag == 105) _currentSpeed = 1.05f;
     else if (sender.tag == 110) _currentSpeed = 1.10f;
 
+    [[NSNotificationCenter defaultCenter] postNotificationName:UIApplicationDidReceiveMemoryWarningNotification object:nil];
+
     [self updateButtonStates];
     [self updateMainButtonTitle];
 }
 
-// Bật / Tắt Bảng Menu
 - (void)toggleMenu {
     [self triggerHaptic];
     [self resetFadeTimer];
@@ -205,7 +213,6 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     }];
 }
 
-// Kéo thả & Snap lề màn hình
 - (void)handlePan:(UIPanGestureRecognizer *)pan {
     [self resetFadeTimer];
     self.alpha = 1.0;
@@ -241,7 +248,6 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     }
 }
 
-// Sau 3s không tương tác: Áp dụng mốc tốc độ mới + Thu gọn & Mờ về 10%
 - (void)resetFadeTimer {
     [_fadeTimer invalidate];
     _fadeTimer = [NSTimer scheduledTimerWithTimeInterval:3.0 target:self selector:@selector(dimMenu) userInfo:nil repeats:NO];
@@ -252,15 +258,12 @@ FOUNDATION_EXPORT float get_speed_factor(void);
 }
 
 - (void)dimMenu {
-    // 1. Áp dụng chính thức mốc tốc độ mới xuống Engine
     set_speed_factor(self.currentSpeed);
 
-    // 2. Thu gọn bảng nút bấm nếu đang mở
     if (self.isExpanded) {
         [self toggleMenu];
     }
     
-    // 3. Mờ xuống 10%
     [UIView animateWithDuration:0.5 animations:^{
         self.alpha = 0.10;
     }];
