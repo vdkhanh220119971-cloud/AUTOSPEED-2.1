@@ -46,7 +46,6 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     if (self) {
         _isExpanded = NO;
 
-        // Đọc giá trị hiện tại từ Engine để đồng bộ ban đầu
         float currentSpeed = get_speed_factor();
         if (currentSpeed < 1.0f) currentSpeed = 1.0f;
         if (currentSpeed > 1.15f) currentSpeed = 1.15f;
@@ -85,7 +84,7 @@ FOUNDATION_EXPORT float get_speed_factor(void);
         _sliderPanel.alpha = 0.0;
         _sliderPanel.hidden = YES;
 
-        // UISlider đồng bộ với giá trị Engine
+        // UISlider (Min 1.00, Max 1.15, bước 0.01)
         _speedSlider = [[UISlider alloc] initWithFrame:CGRectMake(10, 8, 105, 30)];
         _speedSlider.minimumValue = 1.0f;
         _speedSlider.maximumValue = 1.15f;
@@ -96,7 +95,7 @@ FOUNDATION_EXPORT float get_speed_factor(void);
         [_speedSlider addTarget:self action:@selector(triggerHaptic) forControlEvents:UIControlEventTouchDown];
         [_sliderPanel addSubview:_speedSlider];
 
-        // Label đồng bộ hiển thị tốc độ ban đầu
+        // Label hiển thị
         _speedLabel = [[UILabel alloc] initWithFrame:CGRectMake(120, 8, 42, 30)];
         _speedLabel.text = [NSString stringWithFormat:@"%.2fx", currentSpeed];
         _speedLabel.textColor = [UIColor whiteColor];
@@ -106,13 +105,12 @@ FOUNDATION_EXPORT float get_speed_factor(void);
 
         [self addSubview:_sliderPanel];
 
-        // Mặc định mờ 10%
         self.alpha = 0.10;
     }
     return self;
 }
 
-// Pass-through HitTest (Xuyên thấu cảm ứng)
+// Pass-through HitTest
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     if (self.hidden || self.alpha < 0.01) return nil;
 
@@ -165,12 +163,12 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     }];
 }
 
-// Kéo Slider (Bước nhảy 0.05)
+// Kéo Slider (Bước nhảy 0.01 - Từng 1%)
 - (void)sliderValueChanged:(UISlider *)sender {
     [self resetFadeTimer];
     self.alpha = 1.0;
     
-    float step = 0.05f;
+    float step = 0.01f;
     float newStep = roundf(sender.value / step) * step;
     if (newStep < 1.0f) newStep = 1.0f;
     if (newStep > 1.15f) newStep = 1.15f;
@@ -209,7 +207,6 @@ FOUNDATION_EXPORT float get_speed_factor(void);
         CGFloat targetX = (self.center.x < screenWidth / 2.0) ? (insets.left + halfWidth + 10) : (screenWidth - insets.right - halfWidth - 10);
         CGFloat targetY = MIN(MAX(self.center.y, insets.top + halfWidth + 10), screenHeight - insets.bottom - halfWidth - 10);
         
-        // Đổi hướng mở bảng slider tùy theo lề trái hay phải
         if (targetX > screenWidth / 2.0) {
             self.sliderPanel.frame = CGRectMake(-175, 2.5, 170, 45);
         } else {
