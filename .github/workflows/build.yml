@@ -1,6 +1,6 @@
 name: Build iOS Dylib
      
-on: 
+on:  
   push:
     branches: [ "main", "master" ]
   workflow_dispatch:
