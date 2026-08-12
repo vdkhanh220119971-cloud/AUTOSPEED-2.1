@@ -93,7 +93,7 @@ uint64_t my_mach_absolute_time(void) {
     uint64_t real_now = orig_mach_absolute_time();
 
     os_unfair_lock_lock(&speed_lock);
-    if (last_real_mach = 0) {
+    if (last_real_mach == 0) {
         last_real_mach = real_now;
         fake_mach = real_now;
     } else {
