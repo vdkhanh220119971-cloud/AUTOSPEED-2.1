@@ -1,210 +1,272 @@
-#import <Foundation/Foundation.h>
-#import <sys/time.h>
-#import <CoreFoundation/CoreFoundation.h>
-#import <objc/runtime.h>
-#import <mach/mach_time.h>
-#import <os/lock.h>
-#import "fishhook.h"
+#import <UIKit/UIKit.h>
+#import <CoreGraphics/CoreGraphics.h>
 
-// ==========================================
-// SPEEDHACK ENGINE (SCALED ABSOLUTE DELTA)
-// ==========================================
+FOUNDATION_EXPORT void set_speed_factor(float factor);
+FOUNDATION_EXPORT float get_speed_factor(void);
 
-static float speed_factor = 1.0f;
-static os_unfair_lock speed_lock = OS_UNFAIR_LOCK_INIT;
+@interface SpeedhackMenu : UIView
 
-// Original Function Pointers
-static int (*orig_gettimeofday)(struct timeval *tv, struct timezone *tz);
-static CFAbsoluteTime (*orig_CFAbsoluteTimeGetCurrent)(void);
-static uint64_t (*orig_mach_absolute_time)(void);
+@property (nonatomic, strong) UIButton *mainButton;
+@property (nonatomic, strong) UIView *presetPanel;
+@property (nonatomic, strong) UIButton *btn100;
+@property (nonatomic, strong) UIButton *btn105;
+@property (nonatomic, strong) UIButton *btn110;
+@property (nonatomic, assign) BOOL isExpanded;
+@property (nonatomic, strong) NSTimer *fadeTimer;
+@property (nonatomic, assign) float currentSpeed;
 
-// Mốc thời gian thực gốc cố định (Không cộng dồn tích lũy)
-static uint64_t base_real_mach = 0;
-static CFAbsoluteTime base_real_cf = 0;
-static struct timeval base_real_tv = {0, 0};
+@end
 
-// Mốc thời gian ảo tại thời điểm chốt
-static uint64_t base_fake_mach = 0;
-static CFAbsoluteTime base_fake_cf = 0;
-static struct timeval base_fake_tv = {0, 0};
+@implementation SpeedhackMenu
 
-// Helper quy đổi Mach Timebase chuẩn Apple Spec
-static inline uint64_t scale_mach_ticks(uint64_t ticks, float factor) {
-    static mach_timebase_info_data_t tb_info;
-    if (tb_info.denom == 0) {
-        mach_timebase_info(&tb_info);
-    }
-    double nanos = (double)ticks * (double)tb_info.numer / (double)tb_info.denom;
-    double scaled_nanos = nanos * factor;
-    return (uint64_t)(scaled_nanos * (double)tb_info.denom / (double)tb_info.numer);
++ (void)load {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UIWindow *keyWindow = [self getKeyWindow];
+        if (keyWindow) {
+            SpeedhackMenu *menu = [[SpeedhackMenu alloc] initWithFrame:CGRectMake(20, 150, 50, 50)];
+            [keyWindow addSubview:menu];
+        }
+    });
 }
 
-FOUNDATION_EXPORT void set_speed_factor(float factor) {
-    os_unfair_lock_lock(&speed_lock);
-    
-    // Nếu chuyển về 1.0x -> Hard Reset mốc để Bypass trực tiếp 100% gốc iOS
-    if (factor == 1.0f) {
-        base_real_mach = 0;
-        base_fake_mach = 0;
-        base_real_cf = 0;
-        base_fake_cf = 0;
-        base_real_tv = (struct timeval){0, 0};
-        base_fake_tv = (struct timeval){0, 0};
-        speed_factor = 1.0f;
-        os_unfair_lock_unlock(&speed_lock);
-        return;
-    }
-
-    // Khi bật 1.05x hoặc 1.1x -> Đặt mốc xuất phát mới khớp với thời gian thực HIỆN TẠI
-    if (orig_mach_absolute_time) {
-        uint64_t now = orig_mach_absolute_time();
-        if (base_real_mach != 0) {
-            uint64_t delta = now - base_real_mach;
-            base_fake_mach += scale_mach_ticks(delta, speed_factor);
-        } else {
-            base_fake_mach = now;
-        }
-        base_real_mach = now;
-    }
-    
-    if (orig_CFAbsoluteTimeGetCurrent) {
-        CFAbsoluteTime now = orig_CFAbsoluteTimeGetCurrent();
-        if (base_real_cf != 0) {
-            base_fake_cf += (now - base_real_cf) * speed_factor;
-        } else {
-            base_fake_cf = now;
-        }
-        base_real_cf = now;
-    }
-
-    if (orig_gettimeofday) {
-        struct timeval now;
-        if (orig_gettimeofday(&now, NULL) == 0) {
-            if (base_real_tv.tv_sec != 0) {
-                double delta = (now.tv_sec - base_real_tv.tv_sec) + 
-                               (now.tv_usec - base_real_tv.tv_usec) / 1000000.0;
-                double fake_delta = delta * speed_factor;
-                long sec_add = (long)fake_delta;
-                long usec_add = (long)((fake_delta - sec_add) * 1000000.0);
-                
-                base_fake_tv.tv_sec += sec_add;
-                base_fake_tv.tv_usec += usec_add;
-                if (base_fake_tv.tv_usec >= 1000000) {
-                    base_fake_tv.tv_sec += 1;
-                    base_fake_tv.tv_usec -= 1000000;
++ (UIWindow *)getKeyWindow {
+    if (@available(iOS 13.0, *)) {
+        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive && [scene isKindOfClass:[UIWindowScene class]]) {
+                UIWindowScene *windowScene = (UIWindowScene *)scene;
+                for (UIWindow *window in windowScene.windows) {
+                    if (window.isKeyWindow) return window;
                 }
-            } else {
-                base_fake_tv = now;
             }
-            base_real_tv = now;
         }
     }
-
-    speed_factor = factor;
-    os_unfair_lock_unlock(&speed_lock);
+    return [UIApplication sharedApplication].keyWindow;
 }
 
-FOUNDATION_EXPORT float get_speed_factor(void) {
-    return speed_factor;
-}
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        _isExpanded = NO;
+        _currentSpeed = get_speed_factor();
+        if (fabsf(_currentSpeed - 1.05f) > 0.001f && fabsf(_currentSpeed - 1.10f) > 0.001f) {
+            _currentSpeed = 1.00f;
+        }
 
-// Hook 1: gettimeofday
-int my_gettimeofday(struct timeval *tv, struct timezone *tz) {
-    int ret = orig_gettimeofday(tv, tz);
-    if (ret != 0 || tv == NULL) return ret;
-
-    os_unfair_lock_lock(&speed_lock);
-    if (speed_factor == 1.0f || base_real_tv.tv_sec == 0) {
-        os_unfair_lock_unlock(&speed_lock);
-        return ret;
-    }
-
-    double delta = (tv->tv_sec - base_real_tv.tv_sec) + 
-                   (tv->tv_usec - base_real_tv.tv_usec) / 1000000.0;
-    if (delta > 0) {
-        double fake_delta = delta * speed_factor;
-        struct timeval result = base_fake_tv;
-        long sec_add = (long)fake_delta;
-        long usec_add = (long)((fake_delta - sec_add) * 1000000.0);
+        // 1. Nút chính
+        _mainButton = [UIButton buttonWithType:UIButtonTypeCustom];
+        _mainButton.frame = CGRectMake(0, 0, 50, 50);
+        _mainButton.backgroundColor = [UIColor colorWithRed:0.1 green:0.55 blue:1.0 alpha:0.9];
+        _mainButton.layer.cornerRadius = 25.0;
+        _mainButton.layer.borderWidth = 2.0;
+        _mainButton.layer.borderColor = [UIColor whiteColor].CGColor;
+        _mainButton.layer.shadowColor = [UIColor blackColor].CGColor;
+        _mainButton.layer.shadowOffset = CGSizeMake(0, 2);
+        _mainButton.layer.shadowOpacity = 0.3;
+        _mainButton.layer.shadowRadius = 4.0;
         
-        result.tv_sec += sec_add;
-        result.tv_usec += usec_add;
-        if (result.tv_usec >= 1000000) {
-            result.tv_sec += 1;
-            result.tv_usec -= 1000000;
+        [self updateMainButtonTitle];
+        _mainButton.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightBold];
+        [_mainButton addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
+        [self addSubview:_mainButton];
+
+        // Gesture kéo thả
+        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+        [self addGestureRecognizer:pan];
+
+        // 2. Bảng Nút Chọn Tốc Độ (Preset Panel)
+        _presetPanel = [[UIView alloc] initWithFrame:CGRectMake(55, 2.5, 165, 45)];
+        _presetPanel.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.14 alpha:0.95];
+        _presetPanel.layer.cornerRadius = 12.0;
+        _presetPanel.layer.borderWidth = 1.5;
+        _presetPanel.layer.borderColor = [UIColor colorWithRed:0.1 green:0.55 blue:1.0 alpha:1.0].CGColor;
+        _presetPanel.alpha = 0.0;
+        _presetPanel.hidden = YES;
+
+        // Nút 1x
+        _btn100 = [self createSpeedButtonWithTitle:@"1x" tag:100 frame:CGRectMake(8, 7.5, 45, 30)];
+        [_presetPanel addSubview:_btn100];
+
+        // Nút 1.05x
+        _btn105 = [self createSpeedButtonWithTitle:@"1.05x" tag:105 frame:CGRectMake(60, 7.5, 45, 30)];
+        [_presetPanel addSubview:_btn105];
+
+        // Nút 1.1x
+        _btn110 = [self createSpeedButtonWithTitle:@"1.1x" tag:110 frame:CGRectMake(112, 7.5, 45, 30)];
+        [_presetPanel addSubview:_btn110];
+
+        [self updateButtonStates];
+        [self addSubview:_presetPanel];
+
+        self.alpha = 0.10;
+    }
+    return self;
+}
+
+- (UIButton *)createSpeedButtonWithTitle:(NSString *)title tag:(NSInteger)tag frame:(CGRect)frame {
+    UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
+    btn.frame = frame;
+    btn.tag = tag;
+    [btn setTitle:title forState:UIControlStateNormal];
+    btn.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightBold];
+    btn.layer.cornerRadius = 8.0;
+    [btn addTarget:self action:@selector(speedButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
+    return btn;
+}
+
+- (void)updateMainButtonTitle {
+    if (_currentSpeed == 1.00f) {
+        [_mainButton setTitle:@"⚡️1x" forState:UIControlStateNormal];
+    } else {
+        [_mainButton setTitle:[NSString stringWithFormat:@"%.2fx", _currentSpeed] forState:UIControlStateNormal];
+    }
+}
+
+- (void)updateButtonStates {
+    NSArray *buttons = @[_btn100, _btn105, _btn110];
+    for (UIButton *btn in buttons) {
+        float speed = 1.00f;
+        if (btn.tag == 105) speed = 1.05f;
+        if (btn.tag == 110) speed = 1.10f;
+
+        if (fabsf(_currentSpeed - speed) < 0.001f) {
+            btn.backgroundColor = [UIColor colorWithRed:0.1 green:0.55 blue:1.0 alpha:1.0];
+            [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        } else {
+            btn.backgroundColor = [UIColor colorWithRed:0.22 green:0.22 blue:0.25 alpha:1.0];
+            [btn setTitleColor:[UIColor lightGrayColor] forState:UIControlStateNormal];
         }
-        *tv = result;
     }
-    os_unfair_lock_unlock(&speed_lock);
-
-    return ret;
 }
 
-// Hook 2: CFAbsoluteTimeGetCurrent
-CFAbsoluteTime my_CFAbsoluteTimeGetCurrent(void) {
-    CFAbsoluteTime real_now = orig_CFAbsoluteTimeGetCurrent();
+// Pass-through HitTest (Cho phép chạm xuyên vùng trống)
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    if (self.hidden || self.alpha < 0.01) return nil;
+
+    CGPoint mainPoint = [self convertPoint:point toView:self.mainButton];
+    if ([self.mainButton pointInside:mainPoint withEvent:event]) {
+        return self.mainButton;
+    }
+
+    if (self.isExpanded) {
+        CGPoint panelPoint = [self convertPoint:point toView:self.presetPanel];
+        if ([self.presetPanel pointInside:panelPoint withEvent:event]) {
+            return [self.presetPanel hitTest:panelPoint withEvent:event];
+        }
+    }
+    return nil;
+}
+
+- (void)triggerHaptic {
+    if (@available(iOS 10.0, *)) {
+        UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
+        [generator prepare];
+        [generator impactOccurred];
+    }
+}
+
+// Xử lý khi nhấn nút chọn tốc độ
+- (void)speedButtonTapped:(UIButton *)sender {
+    [self triggerHaptic];
+    [self resetFadeTimer];
+    self.alpha = 1.0;
+
+    if (sender.tag == 100) _currentSpeed = 1.00f;
+    else if (sender.tag == 105) _currentSpeed = 1.05f;
+    else if (sender.tag == 110) _currentSpeed = 1.10f;
+
+    // Ép Game Engine xả sạch bộ đệm Timer cũ trong bộ nhớ
+    [[NSNotificationCenter defaultCenter] postNotificationName:UIApplicationDidReceiveMemoryWarningNotification object:nil];
+
+    [self updateButtonStates];
+    [self updateMainButtonTitle];
+}
+
+// Bật / Tắt Bảng Menu
+- (void)toggleMenu {
+    [self triggerHaptic];
+    [self resetFadeTimer];
+    self.alpha = 1.0;
     
-    os_unfair_lock_lock(&speed_lock);
-    if (speed_factor == 1.0f || base_real_cf == 0) {
-        os_unfair_lock_unlock(&speed_lock);
-        return real_now;
-    }
-
-    double delta = real_now - base_real_cf;
-    if (delta > 0) {
-        real_now = base_fake_cf + (delta * speed_factor);
-    }
-    os_unfair_lock_unlock(&speed_lock);
-
-    return real_now;
-}
-
-// Hook 3: mach_absolute_time
-uint64_t my_mach_absolute_time(void) {
-    uint64_t real_now = orig_mach_absolute_time();
-
-    os_unfair_lock_lock(&speed_lock);
-    if (speed_factor == 1.0f || base_real_mach == 0) {
-        os_unfair_lock_unlock(&speed_lock);
-        return real_now;
-    }
-
-    if (real_now > base_real_mach) {
-        uint64_t delta = real_now - base_real_mach;
-        real_now = base_fake_mach + scale_mach_ticks(delta, speed_factor);
-    }
-    os_unfair_lock_unlock(&speed_lock);
-
-    return real_now;
-}
-
-// Swizzling NSDate
-static void swizzle_NSDate_methods(void) {
-    Class nsdateClass = [NSDate class];
+    _isExpanded = !_isExpanded;
     
-    Method origRefMethod = class_getClassMethod(nsdateClass, @selector(timeIntervalSinceReferenceDate));
-    if (origRefMethod) {
-        method_setImplementation(origRefMethod, (IMP)my_CFAbsoluteTimeGetCurrent);
+    if (_isExpanded) {
+        _presetPanel.hidden = NO;
     }
+
+    [UIView animateWithDuration:0.3 delay:0 usingSpringWithDamping:0.8 initialSpringVelocity:0.5 options:UIViewAnimationOptionAllowUserInteraction animations:^{
+        if (self.isExpanded) {
+            self.presetPanel.alpha = 1.0;
+            self.presetPanel.transform = CGAffineTransformIdentity;
+        } else {
+            self.presetPanel.alpha = 0.0;
+            self.presetPanel.transform = CGAffineTransformMakeScale(0.8, 0.8);
+        }
+    } completion:^(BOOL finished) {
+        if (!self.isExpanded) {
+            self.presetPanel.hidden = YES;
+        }
+    }];
+}
+
+// Kéo thả & Snap lề màn hình
+- (void)handlePan:(UIPanGestureRecognizer *)pan {
+    [self resetFadeTimer];
+    self.alpha = 1.0;
     
-    Method origDateMethod = class_getClassMethod(nsdateClass, @selector(date));
-    if (origDateMethod) {
-        IMP newDateImp = imp_implementationWithBlock(^id(id self) {
-            return [NSDate dateWithTimeIntervalSinceReferenceDate:my_CFAbsoluteTimeGetCurrent()];
-        });
-        method_setImplementation(origDateMethod, newDateImp);
+    CGPoint translation = [pan translationInView:self.superview];
+    self.center = CGPointMake(self.center.x + translation.x, self.center.y + translation.y);
+    [pan setTranslation:CGPointZero inView:self.superview];
+
+    if (pan.state == UIGestureRecognizerStateEnded || pan.state == UIGestureRecognizerStateCancelled) {
+        UIEdgeInsets insets = UIEdgeInsetsZero;
+        if (@available(iOS 11.0, *)) {
+            insets = self.superview.safeAreaInsets;
+        }
+        
+        CGFloat screenWidth = self.superview.bounds.size.width;
+        CGFloat screenHeight = self.superview.bounds.size.height;
+        CGFloat halfWidth = self.bounds.size.width / 2.0;
+        
+        CGFloat targetX = (self.center.x < screenWidth / 2.0) ? (insets.left + halfWidth + 10) : (screenWidth - insets.right - halfWidth - 10);
+        CGFloat targetY = MIN(MAX(self.center.y, insets.top + halfWidth + 10), screenHeight - insets.bottom - halfWidth - 10);
+        
+        if (targetX > screenWidth / 2.0) {
+            self.presetPanel.frame = CGRectMake(-170, 2.5, 165, 45);
+        } else {
+            self.presetPanel.frame = CGRectMake(55, 2.5, 165, 45);
+        }
+        
+        [UIView animateWithDuration:0.3 delay:0 usingSpringWithDamping:0.8 initialSpringVelocity:0.5 options:UIViewAnimationOptionAllowUserInteraction animations:^{
+            self.center = CGPointMake(targetX, targetY);
+        } completion:nil];
+
+        [self startFadeTimer];
     }
 }
 
-// Initializer
-__attribute__((constructor))
-static void initialize(void) {
-    struct rebinding rebindings[] = {
-        {"gettimeofday", (void *)my_gettimeofday, (void **)&orig_gettimeofday},
-        {"CFAbsoluteTimeGetCurrent", (void *)my_CFAbsoluteTimeGetCurrent, (void **)&orig_CFAbsoluteTimeGetCurrent},
-        {"mach_absolute_time", (void *)my_mach_absolute_time, (void **)&orig_mach_absolute_time}
-    };
-    rebind_symbols(rebindings, 3);
-    
-    swizzle_NSDate_methods();
+// Sau 3s không tương tác: Áp dụng mốc tốc độ mới + Thu gọn & Mờ về 10%
+- (void)resetFadeTimer {
+    [_fadeTimer invalidate];
+    _fadeTimer = [NSTimer scheduledTimerWithTimeInterval:3.0 target:self selector:@selector(dimMenu) userInfo:nil repeats:NO];
 }
+
+- (void)startFadeTimer {
+    [self resetFadeTimer];
+}
+
+- (void)dimMenu {
+    // 1. Áp dụng chính thức mốc tốc độ mới xuống Engine
+    set_speed_factor(self.currentSpeed);
+
+    // 2. Thu gọn bảng nút bấm nếu đang mở
+    if (self.isExpanded) {
+        [self toggleMenu];
+    }
+    
+    // 3. Mờ xuống 10%
+    [UIView animateWithDuration:0.5 animations:^{
+        self.alpha = 0.10;
+    }];
+}
+
+@end
