@@ -7,7 +7,7 @@
 #import "fishhook.h"
 
 // ==========================================
-// SPEEDHACK ENGINE (PURE REAL-TIME RATIO DELTA)
+// SPEEDHACK ENGINE (NON-ACCUMULATING ABSOLUTE LINEAR ANCHOR)
 // ==========================================
 
 static float speed_factor = 1.0f;
@@ -18,65 +18,77 @@ static int (*orig_gettimeofday)(struct timeval *tv, struct timezone *tz);
 static CFAbsoluteTime (*orig_CFAbsoluteTimeGetCurrent)(void);
 static uint64_t (*orig_mach_absolute_time)(void);
 
-// Real & Virtual Origin Anchors
-static uint64_t mach_origin_real = 0;
-static uint64_t mach_origin_fake = 0;
+// Absolute Base Anchors (Mốc gốc tuyệt đối)
+static uint64_t mach_base_real = 0;
+static uint64_t mach_base_fake = 0;
 
-static CFAbsoluteTime cf_origin_real = 0;
-static CFAbsoluteTime cf_origin_fake = 0;
+static CFAbsoluteTime cf_base_real = 0;
+static CFAbsoluteTime cf_base_fake = 0;
 
-static struct timeval tv_origin_real = {0, 0};
-static struct timeval tv_origin_fake = {0, 0};
+static struct timeval tv_base_real = {0, 0};
+static struct timeval tv_base_fake = {0, 0};
 
 FOUNDATION_EXPORT void set_speed_factor(float factor) {
     os_unfair_lock_lock(&speed_lock);
     
-    speed_factor = factor;
-    
-    // Mối khi đổi tốc độ, đặt lại mốc xuất phát mới khớp với thời gian thực hiện tại
+    // Nếu chọn 1.0x -> Reset sạch toàn bộ mốc để trả về tốc độ gốc 100% của iOS
+    if (factor == 1.0f) {
+        mach_base_real = 0;
+        mach_base_fake = 0;
+        cf_base_real = 0;
+        cf_base_fake = 0;
+        tv_base_real = (struct timeval){0, 0};
+        tv_base_fake = (struct timeval){0, 0};
+        speed_factor = 1.0f;
+        os_unfair_lock_unlock(&speed_lock);
+        return;
+    }
+
+    // Khi chọn 1.05x hoặc 1.10x: Tính mốc fake hiện tại một lần duy nhất rồi CHỐT CỐ ĐỊNH, KHÔNG CỘNG DỒN TÍCH LŨY
     if (orig_mach_absolute_time) {
-        uint64_t now = orig_mach_absolute_time();
-        if (mach_origin_real != 0 && speed_factor != 1.0f) {
-            mach_origin_fake += (uint64_t)((now - mach_origin_real) * speed_factor);
+        uint64_t real_now = orig_mach_absolute_time();
+        if (mach_base_real == 0) {
+            mach_base_fake = real_now;
         } else {
-            mach_origin_fake = now;
+            mach_base_fake += (uint64_t)((real_now - mach_base_real) * speed_factor);
         }
-        mach_origin_real = now;
+        mach_base_real = real_now;
     }
     
     if (orig_CFAbsoluteTimeGetCurrent) {
-        CFAbsoluteTime now = orig_CFAbsoluteTimeGetCurrent();
-        if (cf_origin_real != 0 && speed_factor != 1.0f) {
-            cf_origin_fake += (now - cf_origin_real) * speed_factor;
+        CFAbsoluteTime real_now = orig_CFAbsoluteTimeGetCurrent();
+        if (cf_base_real == 0) {
+            cf_base_fake = real_now;
         } else {
-            cf_origin_fake = now;
+            cf_base_fake += (real_now - cf_base_real) * speed_factor;
         }
-        cf_origin_real = now;
+        cf_base_real = real_now;
     }
 
     if (orig_gettimeofday) {
-        struct timeval now;
-        if (orig_gettimeofday(&now, NULL) == 0) {
-            if (tv_origin_real.tv_sec != 0 && speed_factor != 1.0f) {
-                double delta = (now.tv_sec - tv_origin_real.tv_sec) + 
-                               (now.tv_usec - tv_origin_real.tv_usec) / 1000000.0;
+        struct timeval real_now;
+        if (orig_gettimeofday(&real_now, NULL) == 0) {
+            if (tv_base_real.tv_sec == 0) {
+                tv_base_fake = real_now;
+            } else {
+                double delta = (real_now.tv_sec - tv_base_real.tv_sec) + 
+                               (real_now.tv_usec - tv_base_real.tv_usec) / 1000000.0;
                 double fake_delta = delta * speed_factor;
                 long sec_add = (long)fake_delta;
                 long usec_add = (long)((fake_delta - sec_add) * 1000000.0);
                 
-                tv_origin_fake.tv_sec += sec_add;
-                tv_origin_fake.tv_usec += usec_add;
-                if (tv_origin_fake.tv_usec >= 1000000) {
-                    tv_origin_fake.tv_sec += 1;
-                    tv_origin_fake.tv_usec -= 1000000;
+                tv_base_fake.tv_sec += sec_add;
+                tv_base_fake.tv_usec += usec_add;
+                if (tv_base_fake.tv_usec >= 1000000) {
+                    tv_base_fake.tv_sec += 1;
+                    tv_base_fake.tv_usec -= 1000000;
                 }
-            } else {
-                tv_origin_fake = now;
             }
-            tv_origin_real = now;
+            tv_base_real = real_now;
         }
     }
-    
+
+    speed_factor = factor;
     os_unfair_lock_unlock(&speed_lock);
 }
 
@@ -90,31 +102,26 @@ int my_gettimeofday(struct timeval *tv, struct timezone *tz) {
     if (ret != 0 || tv == NULL) return ret;
 
     os_unfair_lock_lock(&speed_lock);
-    if (speed_factor == 1.0f) {
+    if (speed_factor == 1.0f || tv_base_real.tv_sec == 0) {
         os_unfair_lock_unlock(&speed_lock);
         return ret;
     }
 
-    if (tv_origin_real.tv_sec == 0) {
-        tv_origin_real = *tv;
-        tv_origin_fake = *tv;
-    } else {
-        double delta = (tv->tv_sec - tv_origin_real.tv_sec) + 
-                       (tv->tv_usec - tv_origin_real.tv_usec) / 1000000.0;
-        if (delta > 0) {
-            double fake_delta = delta * speed_factor;
-            struct timeval result = tv_origin_fake;
-            long sec_add = (long)fake_delta;
-            long usec_add = (long)((fake_delta - sec_add) * 1000000.0);
-            
-            result.tv_sec += sec_add;
-            result.tv_usec += usec_add;
-            if (result.tv_usec >= 1000000) {
-                result.tv_sec += 1;
-                result.tv_usec -= 1000000;
-            }
-            *tv = result;
+    double delta = (tv->tv_sec - tv_base_real.tv_sec) + 
+                   (tv->tv_usec - tv_base_real.tv_usec) / 1000000.0;
+    if (delta > 0) {
+        double fake_delta = delta * speed_factor;
+        struct timeval result = tv_base_fake;
+        long sec_add = (long)fake_delta;
+        long usec_add = (long)((fake_delta - sec_add) * 1000000.0);
+        
+        result.tv_sec += sec_add;
+        result.tv_usec += usec_add;
+        if (result.tv_usec >= 1000000) {
+            result.tv_sec += 1;
+            result.tv_usec -= 1000000;
         }
+        *tv = result;
     }
     os_unfair_lock_unlock(&speed_lock);
 
@@ -126,19 +133,14 @@ CFAbsoluteTime my_CFAbsoluteTimeGetCurrent(void) {
     CFAbsoluteTime real_now = orig_CFAbsoluteTimeGetCurrent();
     
     os_unfair_lock_lock(&speed_lock);
-    if (speed_factor == 1.0f) {
+    if (speed_factor == 1.0f || cf_base_real == 0) {
         os_unfair_lock_unlock(&speed_lock);
         return real_now;
     }
 
-    if (cf_origin_real == 0) {
-        cf_origin_real = real_now;
-        cf_origin_fake = real_now;
-    } else {
-        double delta = real_now - cf_origin_real;
-        if (delta > 0) {
-            real_now = cf_origin_fake + (delta * speed_factor);
-        }
+    double delta = real_now - cf_base_real;
+    if (delta > 0) {
+        real_now = cf_base_fake + (delta * speed_factor);
     }
     os_unfair_lock_unlock(&speed_lock);
 
@@ -150,19 +152,14 @@ uint64_t my_mach_absolute_time(void) {
     uint64_t real_now = orig_mach_absolute_time();
 
     os_unfair_lock_lock(&speed_lock);
-    if (speed_factor == 1.0f) {
+    if (speed_factor == 1.0f || mach_base_real == 0) {
         os_unfair_lock_unlock(&speed_lock);
         return real_now;
     }
 
-    if (mach_origin_real == 0) {
-        mach_origin_real = real_now;
-        mach_origin_fake = real_now;
-    } else {
-        if (real_now > mach_origin_real) {
-            uint64_t delta = real_now - mach_origin_real;
-            real_now = mach_origin_fake + (uint64_t)(delta * speed_factor);
-        }
+    if (real_now > mach_base_real) {
+        uint64_t delta = real_now - mach_base_real;
+        real_now = mach_base_fake + (uint64_t)(delta * speed_factor);
     }
     os_unfair_lock_unlock(&speed_lock);
 
