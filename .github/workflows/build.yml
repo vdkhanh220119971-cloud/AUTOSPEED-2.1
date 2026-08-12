@@ -22,7 +22,7 @@ jobs:
         -fobjc-arc \
         -O3 \
         Speedhack.m SpeedhackMenu.m fishhook.c \
-        -framework Foundation -framework CoreFoundation -framework UIKit \
+        -framework Foundation -framework CoreFoundation -framework UIKit -framework CoreGraphics \
         -o Speedhack.dylib
 
     - name: Ad-hoc Code Sign Dylib
