@@ -1,161 +1,139 @@
-#import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h>
+#import <sys/time.h>
+#import <CoreFoundation/CoreFoundation.h>
+#import <objc/runtime.h>
+#import <mach/mach_time.h>
+#import <os/lock.h>
+#import "fishhook.h"
 
-// Hàm kết nối với Speedhack.m
-extern void set_speed_factor(float factor);
-extern float get_speed_factor(void);
+// ==========================================
+// SPEEDHACK ENGINE (THREAD-SAFE & MODULAR)
+// ==========================================
 
-@interface SpeedhackMenu : UIView
+static float speed_factor = 5.0f;
+static os_unfair_lock speed_lock = OS_UNFAIR_LOCK_INIT;
 
-@property (nonatomic, strong) UIButton *mainButton;
-@property (nonatomic, strong) NSMutableArray<UIButton *> *optionButtons;
-@property (nonatomic, assign) BOOL isExpanded;
-@property (nonatomic, strong) NSTimer *fadeTimer;
-
-@end
-
-@implementation SpeedhackMenu
-
-+ (void)load {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        UIWindow *keyWindow = nil;
-        for (UIWindow *window in [UIApplication sharedApplication].windows) {
-            if (window.isKeyWindow) {
-                keyWindow = window;
-                break;
-            }
-        }
-        if (!keyWindow && [UIApplication sharedApplication].windows.count > 0) {
-            keyWindow = [UIApplication sharedApplication].windows.firstObject;
-        }
-
-        if (keyWindow) {
-            SpeedhackMenu *menu = [[SpeedhackMenu alloc] initWithFrame:CGRectMake(50, 150, 50, 50)];
-            [keyWindow addSubview:menu];
-        }
-    });
+FOUNDATION_EXPORT void set_speed_factor(float factor) {
+    os_unfair_lock_lock(&speed_lock);
+    speed_factor = factor;
+    os_unfair_lock_unlock(&speed_lock);
 }
 
-- (instancetype)initWithFrame:(CGRect)frame {
-    self = [super initWithFrame:frame];
-    if (self) {
-        _isExpanded = NO;
-        _optionButtons = [NSMutableArray array];
+FOUNDATION_EXPORT float get_speed_factor(void) {
+    return speed_factor;
+}
 
-        // 1. Nút chính (Bánh xe center)
-        _mainButton = [UIButton buttonWithType:UIButtonTypeCustom];
-        _mainButton.frame = CGRectMake(0, 0, 50, 50);
-        _mainButton.backgroundColor = [UIColor colorWithRed:0.1 green:0.6 blue:1.0 alpha:0.9];
-        _mainButton.layer.cornerRadius = 25.0;
-        _mainButton.layer.borderWidth = 2.0;
-        _mainButton.layer.borderColor = [UIColor whiteColor].CGColor;
-        [_mainButton setTitle:@"⚡️" forState:UIControlStateNormal];
-        _mainButton.titleLabel.font = [UIFont systemFontOfSize:22];
+// Original Function Pointers
+static int (*orig_gettimeofday)(struct timeval *tv, struct timezone *tz);
+static CFAbsoluteTime (*orig_CFAbsoluteTimeGetCurrent)(void);
+static uint64_t (*orig_mach_absolute_time)(void);
+
+// Time Sync Trackers
+static struct timeval last_real_tv = {0, 0};
+static struct timeval fake_tv = {0, 0};
+
+static CFAbsoluteTime last_real_cf = 0;
+static CFAbsoluteTime fake_cf = 0;
+
+static uint64_t last_real_mach = 0;
+static uint64_t fake_mach = 0;
+
+// Hook 1: gettimeofday
+int my_gettimeofday(struct timeval *tv, struct timezone *tz) {
+    int ret = orig_gettimeofday(tv, tz);
+    if (ret != 0 || tv == NULL) return ret;
+
+    os_unfair_lock_lock(&speed_lock);
+    if (last_real_tv.tv_sec == 0) {
+        last_real_tv = *tv;
+        fake_tv = *tv;
+    } else {
+        double delta = (tv->tv_sec - last_real_tv.tv_sec) + 
+                       (tv->tv_usec - last_real_tv.tv_usec) / 1000000.0;
+        double fake_delta = delta * speed_factor;
         
-        [_mainButton addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
-        [self addSubview:_mainButton];
-
-        // Gesture kéo thả
-        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
-        [self addGestureRecognizer:pan];
-
-        // 2. Các tùy chọn tốc độ dạng bánh xe
-        NSArray *speeds = @[@"1x", @"2x", @"5x", @"10x", @"20x"];
-        for (NSString *speedStr in speeds) {
-            UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
-            btn.frame = CGRectMake(5, 5, 40, 40);
-            btn.backgroundColor = [UIColor colorWithWhite:0.1 alpha:0.95];
-            btn.layer.cornerRadius = 20.0;
-            btn.layer.borderWidth = 1.5;
-            btn.layer.borderColor = [UIColor colorWithRed:0.1 green:0.6 blue:1.0 alpha:1.0].CGColor;
-            [btn setTitle:speedStr forState:UIControlStateNormal];
-            [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-            btn.titleLabel.font = [UIFont boldSystemFontOfSize:13];
-            btn.alpha = 0.0;
-            btn.transform = CGAffineTransformMakeScale(0.1, 0.1);
-            
-            [btn addTarget:self action:@selector(speedOptionSelected:) forControlEvents:UIControlEventTouchUpInside];
-            
-            [self insertSubview:btn belowSubview:_mainButton];
-            [_optionButtons addObject:btn];
+        long sec_add = (long)fake_delta;
+        long usec_add = (long)((fake_delta - sec_add) * 1000000.0);
+        
+        fake_tv.tv_sec += sec_add;
+        fake_tv.tv_usec += usec_add;
+        if (fake_tv.tv_usec >= 1000000) {
+            fake_tv.tv_sec += 1;
+            fake_tv.tv_usec -= 1000000;
         }
-
-        // Mặc định mờ khi vừa load
-        self.alpha = 0.25;
+        last_real_tv = *tv;
     }
-    return self;
+    *tv = fake_tv;
+    os_unfair_lock_unlock(&speed_lock);
+
+    return ret;
 }
 
-// Bật / Tắt hiệu ứng xòe bánh xe
-- (void)toggleMenu {
-    [self resetFadeTimer];
-    self.alpha = 1.0; // Hiện rõ ngay khi chạm
+// Hook 2: CFAbsoluteTimeGetCurrent
+CFAbsoluteTime my_CFAbsoluteTimeGetCurrent(void) {
+    CFAbsoluteTime real_now = orig_CFAbsoluteTimeGetCurrent();
     
-    _isExpanded = !_isExpanded;
-    
-    float radius = 75.0; // Bán kính xòe bánh xe
-    NSUInteger count = _optionButtons.count;
-    float stepAngle = (2.0 * M_PI) / count;
+    os_unfair_lock_lock(&speed_lock);
+    if (last_real_cf == 0) {
+        last_real_cf = real_now;
+        fake_cf = real_now;
+    } else {
+        double delta = real_now - last_real_cf;
+        fake_cf += delta * speed_factor;
+        last_real_cf = real_now;
+    }
+    CFAbsoluteTime result = fake_cf;
+    os_unfair_lock_unlock(&speed_lock);
 
-    [UIView animateWithDuration:0.35 delay:0 usingSpringWithDamping:0.7 initialSpringVelocity:0.5 options:UIViewAnimationOptionCurveEaseInOut animations:^{
-        for (NSUInteger i = 0; i < count; i++) {
-            UIButton *btn = self.optionButtons[i];
-            if (self.isExpanded) {
-                float angle = i * stepAngle - (M_PI_2);
-                float x = cosf(angle) * radius;
-                float y = sinf(angle) * radius;
-                
-                btn.transform = CGAffineTransformMakeTranslation(x, y);
-                btn.alpha = 1.0;
-            } else {
-                btn.transform = CGAffineTransformIdentity;
-                btn.alpha = 0.0;
-            }
-        }
-    } completion:nil];
+    return result;
 }
 
-// Xử lý khi bấm nút chọn tốc độ
-- (void)speedOptionSelected:(UIButton *)sender {
-    NSString *title = [sender titleForState:UIControlStateNormal];
-    float speed = [title floatValue];
-    if (speed > 0) {
-        set_speed_factor(speed);
-        [_mainButton setTitle:[NSString stringWithFormat:@"%.0fx", speed] forState:UIControlStateNormal];
+// Hook 3: mach_absolute_time
+uint64_t my_mach_absolute_time(void) {
+    uint64_t real_now = orig_mach_absolute_time();
+
+    os_unfair_lock_lock(&speed_lock);
+    if (last_real_mach == 0) {
+        last_real_mach = real_now;
+        fake_mach = real_now;
+    } else {
+        uint64_t delta = real_now - last_real_mach;
+        fake_mach += (uint64_t)(delta * speed_factor);
+        last_real_mach = real_now;
+    }
+    uint64_t result = fake_mach;
+    os_unfair_lock_unlock(&speed_lock);
+
+    return result;
+}
+
+// Objective-C Swizzling for NSDate
+static void swizzle_NSDate_methods(void) {
+    Class nsdateClass = [NSDate class];
+    
+    Method origRefMethod = class_getClassMethod(nsdateClass, @selector(timeIntervalSinceReferenceDate));
+    if (origRefMethod) {
+        method_setImplementation(origRefMethod, (IMP)my_CFAbsoluteTimeGetCurrent);
     }
     
-    [self toggleMenu]; // Thu gọn menu sau khi chọn
-}
-
-// Kéo thả vị trí Menu
-- (void)handlePan:(UIPanGestureRecognizer *)pan {
-    [self resetFadeTimer];
-    self.alpha = 1.0;
-    
-    CGPoint translation = [pan translationInView:self.superview];
-    self.center = CGPointMake(self.center.x + translation.x, self.center.y + translation.y);
-    [pan setTranslation:CGPointZero inView:self.superview];
-
-    if (pan.state == UIGestureRecognizerStateEnded) {
-        [self startFadeTimer];
-    }
-}
-
-// Quản lý làm mờ tự động
-- (void)resetFadeTimer {
-    [_fadeTimer invalidate];
-    _fadeTimer = [NSTimer scheduledTimerWithTimeInterval:3.0 target:self selector:@selector(dimMenu) userInfo:nil repeats:NO];
-}
-
-- (void)startFadeTimer {
-    [self resetFadeTimer];
-}
-
-- (void)dimMenu {
-    if (!_isExpanded) {
-        [UIView animateWithDuration:0.5 animations:^{
-            self.alpha = 0.20; // Mờ còn 20%
-        }];
+    Method origDateMethod = class_getClassMethod(nsdateClass, @selector(date));
+    if (origDateMethod) {
+        IMP newDateImp = imp_implementationWithBlock(^id(id self) {
+            return [NSDate dateWithTimeIntervalSinceReferenceDate:my_CFAbsoluteTimeGetCurrent()];
+        });
+        method_setImplementation(origDateMethod, newDateImp);
     }
 }
 
-@end
+// Initializer
+__attribute__((constructor))
+static void initialize(void) {
+    struct rebinding rebindings[] = {
+        {"gettimeofday", (void *)my_gettimeofday, (void **)&orig_gettimeofday},
+        {"CFAbsoluteTimeGetCurrent", (void *)my_CFAbsoluteTimeGetCurrent, (void **)&orig_CFAbsoluteTimeGetCurrent},
+        {"mach_absolute_time", (void *)my_mach_absolute_time, (void **)&orig_mach_absolute_time}
+    };
+    rebind_symbols(rebindings, 3);
+    
+    swizzle_NSDate_methods();
+}
