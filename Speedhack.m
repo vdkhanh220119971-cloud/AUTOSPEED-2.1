@@ -6,11 +6,11 @@
 #import "fishhook.h"
 
 // ===================================================
-// CẤU HÌNH BẬT / TẮT TỪNG HÀM (ĐÃ BẬT DUY NHẤT HOOK_CLOCK_GETTIME)
+// CẤU HÌNH BẬT CẢ 3 HÀM CÙNG LÚC
 // ===================================================
-#define HOOK_MACH_ABSOLUTE_TIME   0   // Tắt
-#define HOOK_CF_ABSOLUTE_TIME     0   // Tắt
-#define HOOK_CLOCK_GETTIME        1   // BẬT (Tập trung hook clock_gettime)
+#define HOOK_MACH_ABSOLUTE_TIME   1   // BẬT (Render Frame)
+#define HOOK_CF_ABSOLUTE_TIME     1   // BẬT (UI Timer / CoreFoundation)
+#define HOOK_CLOCK_GETTIME        1   // BẬT (C++ std::chrono / Monotonic)
 
 static float speed_factor = 1.0f;
 static os_unfair_lock speed_lock = OS_UNFAIR_LOCK_INIT;
@@ -93,7 +93,7 @@ CFAbsoluteTime my_CFAbsoluteTimeGetCurrent(void) {
 #endif
 
 // ---------------------------------------------------
-// 3. HOOK CLOCK_GETTIME (ĐANG BẬT)
+// 3. HOOK CLOCK_GETTIME
 // ---------------------------------------------------
 #if HOOK_CLOCK_GETTIME
 static int (*orig_clock_gettime)(clockid_t clk_id, struct timespec *tp) = NULL;
