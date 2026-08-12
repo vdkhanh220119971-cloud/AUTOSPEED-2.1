@@ -9,8 +9,8 @@
 // CẤU HÌNH BẬT / TẮT TỪNG HÀM ĐỂ TEST (1 = BẬT, 0 = TẮT)
 // ===================================================
 #define HOOK_MACH_ABSOLUTE_TIME   0  // [Hàm 1] Quản lý khung hình render (Unity/Unreal/Native)
-#define HOOK_CF_ABSOLUTE_TIME     1   // [Hàm 2] Quản lý thời gian CoreFoundation / UI Timer
-#define HOOK_CLOCK_GETTIME        0   // [Hàm 3] Quản lý C++ std::chrono / Monotonic Clock
+#define HOOK_CF_ABSOLUTE_TIME     0   // [Hàm 2] Quản lý thời gian CoreFoundation / UI Timer
+#define HOOK_CLOCK_GETTIME        1   // [Hàm 3] Quản lý C++ std::chrono / Monotonic Clock
 
 static float speed_factor = 1.0f;
 static os_unfair_lock speed_lock = OS_UNFAIR_LOCK_INIT;
