@@ -9,8 +9,8 @@ FOUNDATION_EXPORT float get_speed_factor(void);
 @property (nonatomic, strong) UIButton *mainButton;
 @property (nonatomic, strong) UIView *presetPanel;
 @property (nonatomic, strong) UIButton *btn100;
-@property (nonatomic, strong) UIButton *btn101;
-@property (nonatomic, strong) UIButton *btn102;
+@property (nonatomic, strong) UIButton *btn105;
+@property (nonatomic, strong) UIButton *btn110;
 @property (nonatomic, assign) BOOL isExpanded;
 @property (nonatomic, strong) NSTimer *fadeTimer;
 @property (nonatomic, assign) float currentSpeed;
@@ -48,7 +48,7 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     if (self) {
         _isExpanded = NO;
         _currentSpeed = get_speed_factor();
-        if (_currentSpeed != 1.01f && _currentSpeed != 1.02f) {
+        if (fabsf(_currentSpeed - 1.05f) > 0.001f && fabsf(_currentSpeed - 1.10f) > 0.001f) {
             _currentSpeed = 1.00f;
         }
 
@@ -82,17 +82,17 @@ FOUNDATION_EXPORT float get_speed_factor(void);
         _presetPanel.alpha = 0.0;
         _presetPanel.hidden = YES;
 
-        // Nút 1.00x
+        // Nút 1x
         _btn100 = [self createSpeedButtonWithTitle:@"1x" tag:100 frame:CGRectMake(8, 7.5, 45, 30)];
         [_presetPanel addSubview:_btn100];
 
-        // Nút 1.01x
-        _btn101 = [self createSpeedButtonWithTitle:@"1.01x" tag:101 frame:CGRectMake(60, 7.5, 45, 30)];
-        [_presetPanel addSubview:_btn101];
+        // Nút 1.05x
+        _btn105 = [self createSpeedButtonWithTitle:@"1.05x" tag:105 frame:CGRectMake(60, 7.5, 45, 30)];
+        [_presetPanel addSubview:_btn105];
 
-        // Nút 1.02x
-        _btn102 = [self createSpeedButtonWithTitle:@"1.02x" tag:102 frame:CGRectMake(112, 7.5, 45, 30)];
-        [_presetPanel addSubview:_btn102];
+        // Nút 1.1x
+        _btn110 = [self createSpeedButtonWithTitle:@"1.1x" tag:110 frame:CGRectMake(112, 7.5, 45, 30)];
+        [_presetPanel addSubview:_btn110];
 
         [self updateButtonStates];
         [self addSubview:_presetPanel];
@@ -122,11 +122,11 @@ FOUNDATION_EXPORT float get_speed_factor(void);
 }
 
 - (void)updateButtonStates {
-    NSArray *buttons = @[_btn100, _btn101, _btn102];
+    NSArray *buttons = @[_btn100, _btn105, _btn110];
     for (UIButton *btn in buttons) {
         float speed = 1.00f;
-        if (btn.tag == 101) speed = 1.01f;
-        if (btn.tag == 102) speed = 1.02f;
+        if (btn.tag == 105) speed = 1.05f;
+        if (btn.tag == 110) speed = 1.10f;
 
         if (fabsf(_currentSpeed - speed) < 0.001f) {
             btn.backgroundColor = [UIColor colorWithRed:0.1 green:0.55 blue:1.0 alpha:1.0];
@@ -138,7 +138,7 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     }
 }
 
-// Pass-through HitTest (Cho phép chạm xuyên vùng trống)
+// Pass-through HitTest
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     if (self.hidden || self.alpha < 0.01) return nil;
 
@@ -164,15 +164,15 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     }
 }
 
-// Xử lý khi nhấn nút chọn tốc độ
+// Xử lý khi nhấn nút mốc tốc độ
 - (void)speedButtonTapped:(UIButton *)sender {
     [self triggerHaptic];
     [self resetFadeTimer];
     self.alpha = 1.0;
 
     if (sender.tag == 100) _currentSpeed = 1.00f;
-    else if (sender.tag == 101) _currentSpeed = 1.01f;
-    else if (sender.tag == 102) _currentSpeed = 1.02f;
+    else if (sender.tag == 105) _currentSpeed = 1.05f;
+    else if (sender.tag == 110) _currentSpeed = 1.10f;
 
     [self updateButtonStates];
     [self updateMainButtonTitle];
@@ -241,7 +241,7 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     }
 }
 
-// Sau 3s không tương tác: Áp dụng mốc tốc độ xuống Engine + Thu gọn & Mờ về 10%
+// Sau 3s không tương tác: Áp dụng mốc tốc độ mới + Thu gọn & Mờ về 10%
 - (void)resetFadeTimer {
     [_fadeTimer invalidate];
     _fadeTimer = [NSTimer scheduledTimerWithTimeInterval:3.0 target:self selector:@selector(dimMenu) userInfo:nil repeats:NO];
