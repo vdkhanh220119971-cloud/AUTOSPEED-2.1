@@ -76,7 +76,7 @@ FOUNDATION_EXPORT float get_speed_factor(void);
         [self addGestureRecognizer:pan];
 
         // 2. Bảng Slider
-        _sliderPanel = [[UIView alloc] initWithFrame:CGRectMake(55, 2.5, 170, 45)];
+        _sliderPanel = [[UIView alloc] initWithFrame:CGRectMake(55, 2.5, 175, 45)];
         _sliderPanel.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.14 alpha:0.95];
         _sliderPanel.layer.cornerRadius = 12.0;
         _sliderPanel.layer.borderWidth = 1.5;
@@ -84,7 +84,7 @@ FOUNDATION_EXPORT float get_speed_factor(void);
         _sliderPanel.alpha = 0.0;
         _sliderPanel.hidden = YES;
 
-        // UISlider (Min 1.00, Max 1.15, bước 0.01)
+        // UISlider (Min 1.000, Max 1.150, bước 0.005)
         _speedSlider = [[UISlider alloc] initWithFrame:CGRectMake(10, 8, 105, 30)];
         _speedSlider.minimumValue = 1.0f;
         _speedSlider.maximumValue = 1.15f;
@@ -95,11 +95,11 @@ FOUNDATION_EXPORT float get_speed_factor(void);
         [_speedSlider addTarget:self action:@selector(triggerHaptic) forControlEvents:UIControlEventTouchDown];
         [_sliderPanel addSubview:_speedSlider];
 
-        // Label hiển thị
-        _speedLabel = [[UILabel alloc] initWithFrame:CGRectMake(120, 8, 42, 30)];
-        _speedLabel.text = [NSString stringWithFormat:@"%.2fx", currentSpeed];
+        // Label hiển thị 3 chữ số thập phân
+        _speedLabel = [[UILabel alloc] initWithFrame:CGRectMake(118, 8, 50, 30)];
+        _speedLabel.text = [NSString stringWithFormat:@"%.3fx", currentSpeed];
         _speedLabel.textColor = [UIColor whiteColor];
-        _speedLabel.font = [UIFont boldSystemFontOfSize:12];
+        _speedLabel.font = [UIFont boldSystemFontOfSize:11];
         _speedLabel.textAlignment = NSTextAlignmentCenter;
         [_sliderPanel addSubview:_speedLabel];
 
@@ -163,18 +163,18 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     }];
 }
 
-// Kéo Slider (Bước nhảy 0.01 - Từng 1%)
+// Kéo Slider (Bước nhảy 0.005 - Từng 0.5%)
 - (void)sliderValueChanged:(UISlider *)sender {
     [self resetFadeTimer];
     self.alpha = 1.0;
     
-    float step = 0.01f;
+    float step = 0.005f;
     float newStep = roundf(sender.value / step) * step;
     if (newStep < 1.0f) newStep = 1.0f;
     if (newStep > 1.15f) newStep = 1.15f;
     
     [sender setValue:newStep animated:NO];
-    self.speedLabel.text = [NSString stringWithFormat:@"%.2fx", newStep];
+    self.speedLabel.text = [NSString stringWithFormat:@"%.3fx", newStep];
     
     if (newStep == 1.0f) {
         [_mainButton setTitle:@"⚡️" forState:UIControlStateNormal];
@@ -208,9 +208,9 @@ FOUNDATION_EXPORT float get_speed_factor(void);
         CGFloat targetY = MIN(MAX(self.center.y, insets.top + halfWidth + 10), screenHeight - insets.bottom - halfWidth - 10);
         
         if (targetX > screenWidth / 2.0) {
-            self.sliderPanel.frame = CGRectMake(-175, 2.5, 170, 45);
+            self.sliderPanel.frame = CGRectMake(-180, 2.5, 175, 45);
         } else {
-            self.sliderPanel.frame = CGRectMake(55, 2.5, 170, 45);
+            self.sliderPanel.frame = CGRectMake(55, 2.5, 175, 45);
         }
         
         [UIView animateWithDuration:0.3 delay:0 usingSpringWithDamping:0.8 initialSpringVelocity:0.5 options:UIViewAnimationOptionAllowUserInteraction animations:^{
