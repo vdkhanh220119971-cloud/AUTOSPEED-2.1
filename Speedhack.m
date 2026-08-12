@@ -18,7 +18,7 @@ static int (*orig_gettimeofday)(struct timeval *tv, struct timezone *tz);
 static CFAbsoluteTime (*orig_CFAbsoluteTimeGetCurrent)(void);
 static uint64_t (*orig_mach_absolute_time)(void);
 
-// Anchor Points (Mốc thời gian gốc)
+// Anchor Points
 static uint64_t anchor_real_mach = 0;
 static uint64_t anchor_fake_mach = 0;
 
@@ -31,12 +31,10 @@ static struct timeval anchor_fake_tv = {0, 0};
 FOUNDATION_EXPORT void set_speed_factor(float factor) {
     os_unfair_lock_lock(&speed_lock);
     
-    // Đặt tốc độ mới
     speed_factor = factor;
     
-    // HARD RESET: Xóa toàn bộ mốc tích lũy cũ để tránh dữ liệu cũ đè lên dữ liệu mới
+    // HARD RESET: Xóa mốc cũ để chuyển đổi mốc mới không bị đè dữ liệu
     if (factor == 1.0f) {
-        // Về 1x: Xóa trắng toàn bộ mốc gốc -> Direct Bypass hoạt động chuẩn 100%
         anchor_real_mach = 0;
         anchor_fake_mach = 0;
         anchor_real_cf = 0;
@@ -44,7 +42,6 @@ FOUNDATION_EXPORT void set_speed_factor(float factor) {
         anchor_real_tv = (struct timeval){0, 0};
         anchor_fake_tv = (struct timeval){0, 0};
     } else {
-        // Khi chọn 1.01x hoặc 1.02x: Lấy thời gian thực HIỆN TẠI làm mốc xuất phát mới hoàn toàn
         if (orig_mach_absolute_time) {
             uint64_t real_now = orig_mach_absolute_time();
             anchor_real_mach = real_now;
