@@ -20,6 +20,7 @@ extern float get_speed_factor(void);
 @property (nonatomic, strong) UIButton *btn105;
 @property (nonatomic, strong) UIButton *btn110;
 @property (nonatomic, strong) UIButton *btn200;
+@property (nonatomic, strong) UIButton *btn500;
 @property (nonatomic, assign) BOOL isExpanded;
 @property (nonatomic, strong) NSTimer *fadeTimer;
 @property (nonatomic, assign) float currentSpeed;
@@ -59,7 +60,8 @@ extern float get_speed_factor(void);
         _currentSpeed = get_speed_factor();
         if (fabsf(_currentSpeed - 1.05f) > 0.001f && 
             fabsf(_currentSpeed - 1.10f) > 0.001f && 
-            fabsf(_currentSpeed - 2.00f) > 0.001f) {
+            fabsf(_currentSpeed - 2.00f) > 0.001f && 
+            fabsf(_currentSpeed - 5.00f) > 0.001f) {
             _currentSpeed = 1.00f;
         }
 
@@ -84,8 +86,8 @@ extern float get_speed_factor(void);
         UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
         [self addGestureRecognizer:pan];
 
-        // 2. Bảng Nút Chọn Tốc Độ (Mở rộng cho 4 nút: 220px)
-        _presetPanel = [[UIView alloc] initWithFrame:CGRectMake(55, 2.5, 220, 45)];
+        // 2. Bảng Nút Chọn Tốc Độ (Mở rộng 275px cho 5 nút)
+        _presetPanel = [[UIView alloc] initWithFrame:CGRectMake(55, 2.5, 275, 45)];
         _presetPanel.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.14 alpha:0.95];
         _presetPanel.layer.cornerRadius = 12.0;
         _presetPanel.layer.borderWidth = 1.5;
@@ -108,6 +110,10 @@ extern float get_speed_factor(void);
         // Nút 2x
         _btn200 = [self createSpeedButtonWithTitle:@"2x" tag:200 frame:CGRectMake(164, 7.5, 45, 30)];
         [_presetPanel addSubview:_btn200];
+
+        // Nút 5x
+        _btn500 = [self createSpeedButtonWithTitle:@"5x" tag:500 frame:CGRectMake(216, 7.5, 45, 30)];
+        [_presetPanel addSubview:_btn500];
 
         [self updateButtonStates];
         [self addSubview:_presetPanel];
@@ -137,12 +143,13 @@ extern float get_speed_factor(void);
 }
 
 - (void)updateButtonStates {
-    NSArray *buttons = @[_btn100, _btn105, _btn110, _btn200];
+    NSArray *buttons = @[_btn100, _btn105, _btn110, _btn200, _btn500];
     for (UIButton *btn in buttons) {
         float speed = 1.00f;
         if (btn.tag == 105) speed = 1.05f;
         if (btn.tag == 110) speed = 1.10f;
         if (btn.tag == 200) speed = 2.00f;
+        if (btn.tag == 500) speed = 5.00f;
 
         if (fabsf(_currentSpeed - speed) < 0.001f) {
             btn.backgroundColor = [UIColor colorWithRed:0.1 green:0.55 blue:1.0 alpha:1.0];
@@ -188,6 +195,7 @@ extern float get_speed_factor(void);
     else if (sender.tag == 105) _currentSpeed = 1.05f;
     else if (sender.tag == 110) _currentSpeed = 1.10f;
     else if (sender.tag == 200) _currentSpeed = 2.00f;
+    else if (sender.tag == 500) _currentSpeed = 5.00f;
 
     [self updateButtonStates];
     [self updateMainButtonTitle];
@@ -241,9 +249,9 @@ extern float get_speed_factor(void);
         CGFloat targetY = MIN(MAX(self.center.y, insets.top + halfWidth + 10), screenHeight - insets.bottom - halfWidth - 10);
         
         if (targetX > screenWidth / 2.0) {
-            self.presetPanel.frame = CGRectMake(-225, 2.5, 220, 45);
+            self.presetPanel.frame = CGRectMake(-280, 2.5, 275, 45);
         } else {
-            self.presetPanel.frame = CGRectMake(55, 2.5, 220, 45);
+            self.presetPanel.frame = CGRectMake(55, 2.5, 275, 45);
         }
         
         [UIView animateWithDuration:0.3 delay:0 usingSpringWithDamping:0.8 initialSpringVelocity:0.5 options:UIViewAnimationOptionAllowUserInteraction animations:^{
