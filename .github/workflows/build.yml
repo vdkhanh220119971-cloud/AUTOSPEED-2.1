@@ -1,36 +1,41 @@
-name: Build iOS Dylib
-      
-on:  
+name: Build Speedhack Dylib
+
+on:
   push:
     branches: [ "main", "master" ]
-  workflow_dispatch:  
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
 
 jobs:
-  build: 
-    runs-on: macos-14
+  build:
+    runs-on: macos-latest
 
-    steps:  
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    steps:
+      - name: Set up job
+        run: echo "Starting build process..."
 
-    - name: Compile Dylib with Clang
-      run: |
-        clang -dynamiclib \ 
-        -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
-        -arch arm64 -arch arm64e \
-        -miphoneos-version-min=14.0 \
-        -fobjc-arc \
-        -O3 \
-        Speedhack.m SpeedhackMenu.m fishhook.c \
-        -framework Foundation -framework CoreFoundation -framework UIKit -framework CoreGraphics \
-        -o Speedhack.dylib
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Ad-hoc Code Sign Dylib
-      run: |
-        codesign -f -s - Speedhack.dylib
+      - name: Compile Dylib with Clang
+        run: |
+          clang -dynamiclib \
+            -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+            -arch arm64 -arch arm64e \
+            -miphoneos-version-min=14.0 \
+            -fobjc-arc \
+            -O3 \
+            Speedhack.m SpeedhackMenu.m fishhook.c \
+            -framework Foundation -framework CoreFoundation -framework UIKit -framework CoreGraphics \
+            -o Speedhack.dylib
 
-    - name: Upload Dylib Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: Speedhack-Dylib
-        path: Speedhack.dylib
+      - name: Ad-hoc Code Sign Dylib
+        run: |
+          codesign -s - Speedhack.dylib
+
+      - name: Upload Dylib Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Speedhack-dylib
+          path: Speedhack.dylib
