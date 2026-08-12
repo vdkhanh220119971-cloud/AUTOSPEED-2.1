@@ -7,12 +7,13 @@ FOUNDATION_EXPORT float get_speed_factor(void);
 @interface SpeedhackMenu : UIView
 
 @property (nonatomic, strong) UIButton *mainButton;
-@property (nonatomic, strong) UIView *sliderPanel;
-@property (nonatomic, strong) UISlider *speedSlider;
-@property (nonatomic, strong) UILabel *speedLabel;
+@property (nonatomic, strong) UIView *presetPanel;
+@property (nonatomic, strong) UIButton *btn100;
+@property (nonatomic, strong) UIButton *btn101;
+@property (nonatomic, strong) UIButton *btn102;
 @property (nonatomic, assign) BOOL isExpanded;
 @property (nonatomic, strong) NSTimer *fadeTimer;
-@property (nonatomic, assign) float pendingSpeed;
+@property (nonatomic, assign) float currentSpeed;
 
 @end
 
@@ -46,11 +47,10 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     self = [super initWithFrame:frame];
     if (self) {
         _isExpanded = NO;
-
-        float currentSpeed = get_speed_factor();
-        if (currentSpeed < 1.0f) currentSpeed = 1.0f;
-        if (currentSpeed > 1.010f) currentSpeed = 1.010f;
-        _pendingSpeed = currentSpeed;
+        _currentSpeed = get_speed_factor();
+        if (_currentSpeed != 1.01f && _currentSpeed != 1.02f) {
+            _currentSpeed = 1.00f;
+        }
 
         // 1. Nút chính
         _mainButton = [UIButton buttonWithType:UIButtonTypeCustom];
@@ -64,12 +64,8 @@ FOUNDATION_EXPORT float get_speed_factor(void);
         _mainButton.layer.shadowOpacity = 0.3;
         _mainButton.layer.shadowRadius = 4.0;
         
-        if (currentSpeed == 1.0f) {
-            [_mainButton setTitle:@"⚡️" forState:UIControlStateNormal];
-        } else {
-            [_mainButton setTitle:[NSString stringWithFormat:@"%.3fx", currentSpeed] forState:UIControlStateNormal];
-        }
-        _mainButton.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
+        [self updateMainButtonTitle];
+        _mainButton.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightBold];
         [_mainButton addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
         [self addSubview:_mainButton];
 
@@ -77,42 +73,72 @@ FOUNDATION_EXPORT float get_speed_factor(void);
         UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
         [self addGestureRecognizer:pan];
 
-        // 2. Bảng Slider
-        _sliderPanel = [[UIView alloc] initWithFrame:CGRectMake(55, 2.5, 180, 45)];
-        _sliderPanel.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.14 alpha:0.95];
-        _sliderPanel.layer.cornerRadius = 12.0;
-        _sliderPanel.layer.borderWidth = 1.5;
-        _sliderPanel.layer.borderColor = [UIColor colorWithRed:0.1 green:0.55 blue:1.0 alpha:1.0].CGColor;
-        _sliderPanel.alpha = 0.0;
-        _sliderPanel.hidden = YES;
+        // 2. Bảng Nút Chọn Tốc Độ (Preset Panel)
+        _presetPanel = [[UIView alloc] initWithFrame:CGRectMake(55, 2.5, 165, 45)];
+        _presetPanel.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.14 alpha:0.95];
+        _presetPanel.layer.cornerRadius = 12.0;
+        _presetPanel.layer.borderWidth = 1.5;
+        _presetPanel.layer.borderColor = [UIColor colorWithRed:0.1 green:0.55 blue:1.0 alpha:1.0].CGColor;
+        _presetPanel.alpha = 0.0;
+        _presetPanel.hidden = YES;
 
-        // UISlider (Min 1.000, Max 1.010, bước 0.001)
-        _speedSlider = [[UISlider alloc] initWithFrame:CGRectMake(10, 8, 105, 30)];
-        _speedSlider.minimumValue = 1.0f;
-        _speedSlider.maximumValue = 1.010f;
-        _speedSlider.value = currentSpeed;
-        _speedSlider.minimumTrackTintColor = [UIColor colorWithRed:0.1 green:0.55 blue:1.0 alpha:1.0];
-        _speedSlider.maximumTrackTintColor = [UIColor darkGrayColor];
-        [_speedSlider addTarget:self action:@selector(sliderValueChanged:) forControlEvents:UIControlEventValueChanged];
-        [_speedSlider addTarget:self action:@selector(triggerHaptic) forControlEvents:UIControlEventTouchDown];
-        [_sliderPanel addSubview:_speedSlider];
+        // Nút 1.00x
+        _btn100 = [self createSpeedButtonWithTitle:@"1x" tag:100 frame:CGRectMake(8, 7.5, 45, 30)];
+        [_presetPanel addSubview:_btn100];
 
-        // Label hiển thị 3 chữ số thập phân
-        _speedLabel = [[UILabel alloc] initWithFrame:CGRectMake(118, 8, 55, 30)];
-        _speedLabel.text = [NSString stringWithFormat:@"%.3fx", currentSpeed];
-        _speedLabel.textColor = [UIColor whiteColor];
-        _speedLabel.font = [UIFont boldSystemFontOfSize:11];
-        _speedLabel.textAlignment = NSTextAlignmentCenter;
-        [_sliderPanel addSubview:_speedLabel];
+        // Nút 1.01x
+        _btn101 = [self createSpeedButtonWithTitle:@"1.01x" tag:101 frame:CGRectMake(60, 7.5, 45, 30)];
+        [_presetPanel addSubview:_btn101];
 
-        [self addSubview:_sliderPanel];
+        // Nút 1.02x
+        _btn102 = [self createSpeedButtonWithTitle:@"1.02x" tag:102 frame:CGRectMake(112, 7.5, 45, 30)];
+        [_presetPanel addSubview:_btn102];
+
+        [self updateButtonStates];
+        [self addSubview:_presetPanel];
 
         self.alpha = 0.10;
     }
     return self;
 }
 
-// Pass-through HitTest
+- (UIButton *)createSpeedButtonWithTitle:(NSString *)title tag:(NSInteger)tag frame:(CGRect)frame {
+    UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
+    btn.frame = frame;
+    btn.tag = tag;
+    [btn setTitle:title forState:UIControlStateNormal];
+    btn.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightBold];
+    btn.layer.cornerRadius = 8.0;
+    [btn addTarget:self action:@selector(speedButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
+    return btn;
+}
+
+- (void)updateMainButtonTitle {
+    if (_currentSpeed == 1.00f) {
+        [_mainButton setTitle:@"⚡️1x" forState:UIControlStateNormal];
+    } else {
+        [_mainButton setTitle:[NSString stringWithFormat:@"%.2fx", _currentSpeed] forState:UIControlStateNormal];
+    }
+}
+
+- (void)updateButtonStates {
+    NSArray *buttons = @[_btn100, _btn101, _btn102];
+    for (UIButton *btn in buttons) {
+        float speed = 1.00f;
+        if (btn.tag == 101) speed = 1.01f;
+        if (btn.tag == 102) speed = 1.02f;
+
+        if (fabsf(_currentSpeed - speed) < 0.001f) {
+            btn.backgroundColor = [UIColor colorWithRed:0.1 green:0.55 blue:1.0 alpha:1.0];
+            [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        } else {
+            btn.backgroundColor = [UIColor colorWithRed:0.22 green:0.22 blue:0.25 alpha:1.0];
+            [btn setTitleColor:[UIColor lightGrayColor] forState:UIControlStateNormal];
+        }
+    }
+}
+
+// Pass-through HitTest (Cho phép chạm xuyên vùng trống)
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     if (self.hidden || self.alpha < 0.01) return nil;
 
@@ -122,9 +148,9 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     }
 
     if (self.isExpanded) {
-        CGPoint panelPoint = [self convertPoint:point toView:self.sliderPanel];
-        if ([self.sliderPanel pointInside:panelPoint withEvent:event]) {
-            return [self.sliderPanel hitTest:panelPoint withEvent:event];
+        CGPoint panelPoint = [self convertPoint:point toView:self.presetPanel];
+        if ([self.presetPanel pointInside:panelPoint withEvent:event]) {
+            return [self.presetPanel hitTest:panelPoint withEvent:event];
         }
     }
     return nil;
@@ -138,7 +164,21 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     }
 }
 
-// Bật / Tắt Bảng Slider
+// Xử lý khi nhấn nút chọn tốc độ
+- (void)speedButtonTapped:(UIButton *)sender {
+    [self triggerHaptic];
+    [self resetFadeTimer];
+    self.alpha = 1.0;
+
+    if (sender.tag == 100) _currentSpeed = 1.00f;
+    else if (sender.tag == 101) _currentSpeed = 1.01f;
+    else if (sender.tag == 102) _currentSpeed = 1.02f;
+
+    [self updateButtonStates];
+    [self updateMainButtonTitle];
+}
+
+// Bật / Tắt Bảng Menu
 - (void)toggleMenu {
     [self triggerHaptic];
     [self resetFadeTimer];
@@ -147,39 +187,22 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     _isExpanded = !_isExpanded;
     
     if (_isExpanded) {
-        _sliderPanel.hidden = NO;
+        _presetPanel.hidden = NO;
     }
 
     [UIView animateWithDuration:0.3 delay:0 usingSpringWithDamping:0.8 initialSpringVelocity:0.5 options:UIViewAnimationOptionAllowUserInteraction animations:^{
         if (self.isExpanded) {
-            self.sliderPanel.alpha = 1.0;
-            self.sliderPanel.transform = CGAffineTransformIdentity;
+            self.presetPanel.alpha = 1.0;
+            self.presetPanel.transform = CGAffineTransformIdentity;
         } else {
-            self.sliderPanel.alpha = 0.0;
-            self.sliderPanel.transform = CGAffineTransformMakeScale(0.8, 0.8);
+            self.presetPanel.alpha = 0.0;
+            self.presetPanel.transform = CGAffineTransformMakeScale(0.8, 0.8);
         }
     } completion:^(BOOL finished) {
         if (!self.isExpanded) {
-            self.sliderPanel.hidden = YES;
+            self.presetPanel.hidden = YES;
         }
     }];
-}
-
-// Kéo Slider (Bước nhảy 0.001 - Từng 0.1%)
-- (void)sliderValueChanged:(UISlider *)sender {
-    [self resetFadeTimer];
-    self.alpha = 1.0;
-    
-    float step = 0.001f;
-    float newStep = roundf(sender.value / step) * step;
-    if (newStep < 1.0f) newStep = 1.0f;
-    if (newStep > 1.010f) newStep = 1.010f;
-    
-    [sender setValue:newStep animated:NO];
-    self.speedLabel.text = [NSString stringWithFormat:@"%.3fx", newStep];
-    
-    // Cập nhật giá trị chờ (chưa gửi ngay cho Engine)
-    self.pendingSpeed = newStep;
 }
 
 // Kéo thả & Snap lề màn hình
@@ -205,9 +228,9 @@ FOUNDATION_EXPORT float get_speed_factor(void);
         CGFloat targetY = MIN(MAX(self.center.y, insets.top + halfWidth + 10), screenHeight - insets.bottom - halfWidth - 10);
         
         if (targetX > screenWidth / 2.0) {
-            self.sliderPanel.frame = CGRectMake(-185, 2.5, 180, 45);
+            self.presetPanel.frame = CGRectMake(-170, 2.5, 165, 45);
         } else {
-            self.sliderPanel.frame = CGRectMake(55, 2.5, 180, 45);
+            self.presetPanel.frame = CGRectMake(55, 2.5, 165, 45);
         }
         
         [UIView animateWithDuration:0.3 delay:0 usingSpringWithDamping:0.8 initialSpringVelocity:0.5 options:UIViewAnimationOptionAllowUserInteraction animations:^{
@@ -218,7 +241,7 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     }
 }
 
-// Tự động làm mờ xuống 10% VÀ Áp dụng tốc độ xuống Engine sau 3 giây
+// Sau 3s không tương tác: Áp dụng mốc tốc độ xuống Engine + Thu gọn & Mờ về 10%
 - (void)resetFadeTimer {
     [_fadeTimer invalidate];
     _fadeTimer = [NSTimer scheduledTimerWithTimeInterval:3.0 target:self selector:@selector(dimMenu) userInfo:nil repeats:NO];
@@ -229,22 +252,15 @@ FOUNDATION_EXPORT float get_speed_factor(void);
 }
 
 - (void)dimMenu {
-    // 1. Áp dụng chính thức tốc độ mới xuống Engine
-    set_speed_factor(self.pendingSpeed);
-    
-    // 2. Cập nhật nhãn nút bấm
-    if (self.pendingSpeed == 1.0f) {
-        [_mainButton setTitle:@"⚡️" forState:UIControlStateNormal];
-    } else {
-        [_mainButton setTitle:[NSString stringWithFormat:@"%.3fx", self.pendingSpeed] forState:UIControlStateNormal];
-    }
+    // 1. Áp dụng chính thức mốc tốc độ mới xuống Engine
+    set_speed_factor(self.currentSpeed);
 
-    // 3. Thu gọn bảng slider nếu đang mở
+    // 2. Thu gọn bảng nút bấm nếu đang mở
     if (self.isExpanded) {
         [self toggleMenu];
     }
     
-    // 4. Mờ xuống 10%
+    // 3. Mờ xuống 10%
     [UIView animateWithDuration:0.5 animations:^{
         self.alpha = 0.10;
     }];
