@@ -5,23 +5,13 @@
 #import <mach/mach_time.h>
 #import <os/lock.h>
 #import "fishhook.h"
- 
+
 // ==========================================
 // SPEEDHACK ENGINE (THREAD-SAFE & MODULAR)
 // ==========================================
 
-static float speed_factor = 5.0f;
+static float speed_factor = 1.0f;
 static os_unfair_lock speed_lock = OS_UNFAIR_LOCK_INIT;
-
-FOUNDATION_EXPORT void set_speed_factor(float factor) {
-    os_unfair_lock_lock(&speed_lock);
-    speed_factor = factor;
-    os_unfair_lock_unlock(&speed_lock);
-}
-
-FOUNDATION_EXPORT float get_speed_factor(void) {
-    return speed_factor;
-}
 
 // Original Function Pointers
 static int (*orig_gettimeofday)(struct timeval *tv, struct timezone *tz);
@@ -38,12 +28,47 @@ static CFAbsoluteTime fake_cf = 0;
 static uint64_t last_real_mach = 0;
 static uint64_t fake_mach = 0;
 
+FOUNDATION_EXPORT void set_speed_factor(float factor) {
+    os_unfair_lock_lock(&speed_lock);
+    speed_factor = factor;
+    
+    // Nếu đặt về 1.0x hoặc đổi tốc độ, reset mốc để đồng bộ lại thời gian thực
+    if (factor == 1.0f) {
+        last_real_tv = (struct timeval){0, 0};
+        fake_tv = (struct timeval){0, 0};
+        
+        last_real_cf = 0;
+        fake_cf = 0;
+        
+        last_real_mach = 0;
+        fake_mach = 0;
+    } else {
+        if (orig_mach_absolute_time) last_real_mach = orig_mach_absolute_time();
+        if (orig_CFAbsoluteTimeGetCurrent) last_real_cf = orig_CFAbsoluteTimeGetCurrent();
+        if (orig_gettimeofday) {
+            struct timeval tv;
+            orig_gettimeofday(&tv, NULL);
+            last_real_tv = tv;
+        }
+    }
+    os_unfair_lock_unlock(&speed_lock);
+}
+
+FOUNDATION_EXPORT float get_speed_factor(void) {
+    return speed_factor;
+}
+
 // Hook 1: gettimeofday
 int my_gettimeofday(struct timeval *tv, struct timezone *tz) {
     int ret = orig_gettimeofday(tv, tz);
     if (ret != 0 || tv == NULL) return ret;
 
     os_unfair_lock_lock(&speed_lock);
+    if (speed_factor == 1.0f) {
+        os_unfair_lock_unlock(&speed_lock);
+        return ret;
+    }
+
     if (last_real_tv.tv_sec == 0) {
         last_real_tv = *tv;
         fake_tv = *tv;
@@ -74,6 +99,11 @@ CFAbsoluteTime my_CFAbsoluteTimeGetCurrent(void) {
     CFAbsoluteTime real_now = orig_CFAbsoluteTimeGetCurrent();
     
     os_unfair_lock_lock(&speed_lock);
+    if (speed_factor == 1.0f) {
+        os_unfair_lock_unlock(&speed_lock);
+        return real_now;
+    }
+
     if (last_real_cf == 0) {
         last_real_cf = real_now;
         fake_cf = real_now;
@@ -93,6 +123,11 @@ uint64_t my_mach_absolute_time(void) {
     uint64_t real_now = orig_mach_absolute_time();
 
     os_unfair_lock_lock(&speed_lock);
+    if (speed_factor == 1.0f) {
+        os_unfair_lock_unlock(&speed_lock);
+        return real_now;
+    }
+
     if (last_real_mach == 0) {
         last_real_mach = real_now;
         fake_mach = real_now;
