@@ -15,7 +15,7 @@ jobs:
 
     - name: Compile Dylib with Clang
       run: |
-        clang -dynamiclib \
+        clang -dynamiclib \ 
         -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
         -arch arm64 -arch arm64e \
         -miphoneos-version-min=14.0 \
