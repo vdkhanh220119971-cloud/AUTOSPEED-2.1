@@ -6,11 +6,11 @@
 #import "fishhook.h"
 
 // ===================================================
-// CẤU HÌNH BẬT / TẮT TỪNG HÀM ĐỂ TEST (1 = BẬT, 0 = TẮT)
+// CẤU HÌNH BẬT / TẮT TỪNG HÀM (ĐÃ BẬT DUY NHẤT HOOK_CF_ABSOLUTE_TIME)
 // ===================================================
-#define HOOK_MACH_ABSOLUTE_TIME   0  // [Hàm 1] Quản lý khung hình render (Unity/Unreal/Native)
-#define HOOK_CF_ABSOLUTE_TIME     0   // [Hàm 2] Quản lý thời gian CoreFoundation / UI Timer
-#define HOOK_CLOCK_GETTIME        1   // [Hàm 3] Quản lý C++ std::chrono / Monotonic Clock
+#define HOOK_MACH_ABSOLUTE_TIME   0   // Tắt
+#define HOOK_CF_ABSOLUTE_TIME     1   // BẬT (Tập trung hook CFAbsoluteTimeGetCurrent)
+#define HOOK_CLOCK_GETTIME        0   // Tắt
 
 static float speed_factor = 1.0f;
 static os_unfair_lock speed_lock = OS_UNFAIR_LOCK_INIT;
@@ -65,7 +65,7 @@ uint64_t my_mach_absolute_time(void) {
 #endif
 
 // ---------------------------------------------------
-// 2. HOOK CFABSOLUTETIMEGETCURRENT
+// 2. HOOK CFABSOLUTETIMEGETCURRENT (ĐANG BẬT)
 // ---------------------------------------------------
 #if HOOK_CF_ABSOLUTE_TIME
 static CFAbsoluteTime (*orig_CFAbsoluteTimeGetCurrent)(void) = NULL;
