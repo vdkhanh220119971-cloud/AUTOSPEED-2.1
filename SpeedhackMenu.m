@@ -7,7 +7,9 @@ FOUNDATION_EXPORT float get_speed_factor(void);
 @interface SpeedhackMenu : UIView
 
 @property (nonatomic, strong) UIButton *mainButton;
-@property (nonatomic, strong) NSMutableArray<UIButton *> *optionButtons;
+@property (nonatomic, strong) UIView *sliderPanel;
+@property (nonatomic, strong) UISlider *speedSlider;
+@property (nonatomic, strong) UILabel *speedLabel;
 @property (nonatomic, assign) BOOL isExpanded;
 @property (nonatomic, strong) NSTimer *fadeTimer;
 
@@ -16,110 +18,176 @@ FOUNDATION_EXPORT float get_speed_factor(void);
 @implementation SpeedhackMenu
 
 + (void)load {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        UIWindow *keyWindow = nil;
-        for (UIWindow *window in [UIApplication sharedApplication].windows) {
-            if (window.isKeyWindow) {
-                keyWindow = window;
-                break;
-            }
-        }
-        if (!keyWindow && [UIApplication sharedApplication].windows.count > 0) {
-            keyWindow = [UIApplication sharedApplication].windows.firstObject;
-        }
-
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UIWindow *keyWindow = [self getKeyWindow];
         if (keyWindow) {
-            SpeedhackMenu *menu = [[SpeedhackMenu alloc] initWithFrame:CGRectMake(50, 150, 50, 50)];
+            SpeedhackMenu *menu = [[SpeedhackMenu alloc] initWithFrame:CGRectMake(20, 150, 50, 50)];
             [keyWindow addSubview:menu];
         }
     });
+}
+
++ (UIWindow *)getKeyWindow {
+    if (@available(iOS 13.0, *)) {
+        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive && [scene isKindOfClass:[UIWindowScene class]]) {
+                UIWindowScene *windowScene = (UIWindowScene *)scene;
+                for (UIWindow *window in windowScene.windows) {
+                    if (window.isKeyWindow) return window;
+                }
+            }
+        }
+    }
+    return [UIApplication sharedApplication].keyWindow;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
         _isExpanded = NO;
-        _optionButtons = [NSMutableArray array];
 
+        // Đọc giá trị hiện tại từ Engine để đồng bộ ban đầu
+        float currentSpeed = get_speed_factor();
+        if (currentSpeed < 1.0f) currentSpeed = 1.0f;
+        if (currentSpeed > 1.15f) currentSpeed = 1.15f;
+
+        // 1. Nút chính
         _mainButton = [UIButton buttonWithType:UIButtonTypeCustom];
         _mainButton.frame = CGRectMake(0, 0, 50, 50);
-        _mainButton.backgroundColor = [UIColor colorWithRed:0.1 green:0.6 blue:1.0 alpha:0.9];
+        _mainButton.backgroundColor = [UIColor colorWithRed:0.1 green:0.55 blue:1.0 alpha:0.9];
         _mainButton.layer.cornerRadius = 25.0;
         _mainButton.layer.borderWidth = 2.0;
         _mainButton.layer.borderColor = [UIColor whiteColor].CGColor;
-        [_mainButton setTitle:@"⚡️" forState:UIControlStateNormal];
-        _mainButton.titleLabel.font = [UIFont systemFontOfSize:22];
+        _mainButton.layer.shadowColor = [UIColor blackColor].CGColor;
+        _mainButton.layer.shadowOffset = CGSizeMake(0, 2);
+        _mainButton.layer.shadowOpacity = 0.3;
+        _mainButton.layer.shadowRadius = 4.0;
         
+        if (currentSpeed == 1.0f) {
+            [_mainButton setTitle:@"⚡️" forState:UIControlStateNormal];
+        } else {
+            [_mainButton setTitle:[NSString stringWithFormat:@"%.2fx", currentSpeed] forState:UIControlStateNormal];
+        }
+        _mainButton.titleLabel.font = [UIFont systemFontOfSize:18 weight:UIFontWeightBold];
         [_mainButton addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
         [self addSubview:_mainButton];
 
+        // Gesture kéo thả
         UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
         [self addGestureRecognizer:pan];
 
-        NSArray *speeds = @[@"1x", @"2x", @"5x", @"10x", @"20x"];
-        for (NSString *speedStr in speeds) {
-            UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
-            btn.frame = CGRectMake(5, 5, 40, 40);
-            btn.backgroundColor = [UIColor colorWithWhite:0.1 alpha:0.95];
-            btn.layer.cornerRadius = 20.0;
-            btn.layer.borderWidth = 1.5;
-            btn.layer.borderColor = [UIColor colorWithRed:0.1 green:0.6 blue:1.0 alpha:1.0].CGColor;
-            [btn setTitle:speedStr forState:UIControlStateNormal];
-            [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-            btn.titleLabel.font = [UIFont boldSystemFontOfSize:13];
-            btn.alpha = 0.0;
-            btn.transform = CGAffineTransformMakeScale(0.1, 0.1);
-            
-            [btn addTarget:self action:@selector(speedOptionSelected:) forControlEvents:UIControlEventTouchUpInside];
-            
-            [self insertSubview:btn belowSubview:_mainButton];
-            [_optionButtons addObject:btn];
-        }
+        // 2. Bảng Slider
+        _sliderPanel = [[UIView alloc] initWithFrame:CGRectMake(55, 2.5, 170, 45)];
+        _sliderPanel.backgroundColor = [UIColor colorWithRed:0.12 green:0.12 blue:0.14 alpha:0.95];
+        _sliderPanel.layer.cornerRadius = 12.0;
+        _sliderPanel.layer.borderWidth = 1.5;
+        _sliderPanel.layer.borderColor = [UIColor colorWithRed:0.1 green:0.55 blue:1.0 alpha:1.0].CGColor;
+        _sliderPanel.alpha = 0.0;
+        _sliderPanel.hidden = YES;
 
-        self.alpha = 0.25;
+        // UISlider đồng bộ với giá trị Engine
+        _speedSlider = [[UISlider alloc] initWithFrame:CGRectMake(10, 8, 105, 30)];
+        _speedSlider.minimumValue = 1.0f;
+        _speedSlider.maximumValue = 1.15f;
+        _speedSlider.value = currentSpeed;
+        _speedSlider.minimumTrackTintColor = [UIColor colorWithRed:0.1 green:0.55 blue:1.0 alpha:1.0];
+        _speedSlider.maximumTrackTintColor = [UIColor darkGrayColor];
+        [_speedSlider addTarget:self action:@selector(sliderValueChanged:) forControlEvents:UIControlEventValueChanged];
+        [_speedSlider addTarget:self action:@selector(triggerHaptic) forControlEvents:UIControlEventTouchDown];
+        [_sliderPanel addSubview:_speedSlider];
+
+        // Label đồng bộ hiển thị tốc độ ban đầu
+        _speedLabel = [[UILabel alloc] initWithFrame:CGRectMake(120, 8, 42, 30)];
+        _speedLabel.text = [NSString stringWithFormat:@"%.2fx", currentSpeed];
+        _speedLabel.textColor = [UIColor whiteColor];
+        _speedLabel.font = [UIFont boldSystemFontOfSize:12];
+        _speedLabel.textAlignment = NSTextAlignmentCenter;
+        [_sliderPanel addSubview:_speedLabel];
+
+        [self addSubview:_sliderPanel];
+
+        // Mặc định mờ 10%
+        self.alpha = 0.10;
     }
     return self;
 }
 
+// Pass-through HitTest (Xuyên thấu cảm ứng)
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    if (self.hidden || self.alpha < 0.01) return nil;
+
+    CGPoint mainPoint = [self convertPoint:point toView:self.mainButton];
+    if ([self.mainButton pointInside:mainPoint withEvent:event]) {
+        return self.mainButton;
+    }
+
+    if (self.isExpanded) {
+        CGPoint panelPoint = [self convertPoint:point toView:self.sliderPanel];
+        if ([self.sliderPanel pointInside:panelPoint withEvent:event]) {
+            return [self.sliderPanel hitTest:panelPoint withEvent:event];
+        }
+    }
+    return nil;
+}
+
+- (void)triggerHaptic {
+    if (@available(iOS 10.0, *)) {
+        UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
+        [generator prepare];
+        [generator impactOccurred];
+    }
+}
+
+// Bật / Tắt Bảng Slider
 - (void)toggleMenu {
+    [self triggerHaptic];
     [self resetFadeTimer];
     self.alpha = 1.0;
     
     _isExpanded = !_isExpanded;
     
-    float radius = 75.0;
-    NSUInteger count = _optionButtons.count;
-    float stepAngle = (2.0 * M_PI) / count;
+    if (_isExpanded) {
+        _sliderPanel.hidden = NO;
+    }
 
-    [UIView animateWithDuration:0.35 delay:0 usingSpringWithDamping:0.7 initialSpringVelocity:0.5 options:UIViewAnimationOptionCurveEaseInOut animations:^{
-        for (NSUInteger i = 0; i < count; i++) {
-            UIButton *btn = self.optionButtons[i];
-            if (self.isExpanded) {
-                float angle = i * stepAngle - (M_PI_2);
-                float x = cosf(angle) * radius;
-                float y = sinf(angle) * radius;
-                
-                btn.transform = CGAffineTransformMakeTranslation(x, y);
-                btn.alpha = 1.0;
-            } else {
-                btn.transform = CGAffineTransformIdentity;
-                btn.alpha = 0.0;
-            }
+    [UIView animateWithDuration:0.3 delay:0 usingSpringWithDamping:0.8 initialSpringVelocity:0.5 options:UIViewAnimationOptionAllowUserInteraction animations:^{
+        if (self.isExpanded) {
+            self.sliderPanel.alpha = 1.0;
+            self.sliderPanel.transform = CGAffineTransformIdentity;
+        } else {
+            self.sliderPanel.alpha = 0.0;
+            self.sliderPanel.transform = CGAffineTransformMakeScale(0.8, 0.8);
         }
-    } completion:nil];
+    } completion:^(BOOL finished) {
+        if (!self.isExpanded) {
+            self.sliderPanel.hidden = YES;
+        }
+    }];
 }
 
-- (void)speedOptionSelected:(UIButton *)sender {
-    NSString *title = [sender titleForState:UIControlStateNormal];
-    float speed = [title floatValue];
-    if (speed > 0) {
-        set_speed_factor(speed);
-        [_mainButton setTitle:[NSString stringWithFormat:@"%.0fx", speed] forState:UIControlStateNormal];
+// Kéo Slider (Bước nhảy 0.05)
+- (void)sliderValueChanged:(UISlider *)sender {
+    [self resetFadeTimer];
+    self.alpha = 1.0;
+    
+    float step = 0.05f;
+    float newStep = roundf(sender.value / step) * step;
+    if (newStep < 1.0f) newStep = 1.0f;
+    if (newStep > 1.15f) newStep = 1.15f;
+    
+    [sender setValue:newStep animated:NO];
+    self.speedLabel.text = [NSString stringWithFormat:@"%.2fx", newStep];
+    
+    if (newStep == 1.0f) {
+        [_mainButton setTitle:@"⚡️" forState:UIControlStateNormal];
+    } else {
+        [_mainButton setTitle:[NSString stringWithFormat:@"%.2fx", newStep] forState:UIControlStateNormal];
     }
     
-    [self toggleMenu];
+    set_speed_factor(newStep);
 }
 
+// Kéo thả & Snap lề màn hình
 - (void)handlePan:(UIPanGestureRecognizer *)pan {
     [self resetFadeTimer];
     self.alpha = 1.0;
@@ -128,11 +196,35 @@ FOUNDATION_EXPORT float get_speed_factor(void);
     self.center = CGPointMake(self.center.x + translation.x, self.center.y + translation.y);
     [pan setTranslation:CGPointZero inView:self.superview];
 
-    if (pan.state == UIGestureRecognizerStateEnded) {
+    if (pan.state == UIGestureRecognizerStateEnded || pan.state == UIGestureRecognizerStateCancelled) {
+        UIEdgeInsets insets = UIEdgeInsetsZero;
+        if (@available(iOS 11.0, *)) {
+            insets = self.superview.safeAreaInsets;
+        }
+        
+        CGFloat screenWidth = self.superview.bounds.size.width;
+        CGFloat screenHeight = self.superview.bounds.size.height;
+        CGFloat halfWidth = self.bounds.size.width / 2.0;
+        
+        CGFloat targetX = (self.center.x < screenWidth / 2.0) ? (insets.left + halfWidth + 10) : (screenWidth - insets.right - halfWidth - 10);
+        CGFloat targetY = MIN(MAX(self.center.y, insets.top + halfWidth + 10), screenHeight - insets.bottom - halfWidth - 10);
+        
+        // Đổi hướng mở bảng slider tùy theo lề trái hay phải
+        if (targetX > screenWidth / 2.0) {
+            self.sliderPanel.frame = CGRectMake(-175, 2.5, 170, 45);
+        } else {
+            self.sliderPanel.frame = CGRectMake(55, 2.5, 170, 45);
+        }
+        
+        [UIView animateWithDuration:0.3 delay:0 usingSpringWithDamping:0.8 initialSpringVelocity:0.5 options:UIViewAnimationOptionAllowUserInteraction animations:^{
+            self.center = CGPointMake(targetX, targetY);
+        } completion:nil];
+
         [self startFadeTimer];
     }
 }
 
+// Tự động làm mờ xuống 10%
 - (void)resetFadeTimer {
     [_fadeTimer invalidate];
     _fadeTimer = [NSTimer scheduledTimerWithTimeInterval:3.0 target:self selector:@selector(dimMenu) userInfo:nil repeats:NO];
@@ -143,11 +235,12 @@ FOUNDATION_EXPORT float get_speed_factor(void);
 }
 
 - (void)dimMenu {
-    if (!_isExpanded) {
-        [UIView animateWithDuration:0.5 animations:^{
-            self.alpha = 0.20;
-        }];
+    if (self.isExpanded) {
+        [self toggleMenu];
     }
+    [UIView animateWithDuration:0.5 animations:^{
+        self.alpha = 0.10;
+    }];
 }
 
 @end
