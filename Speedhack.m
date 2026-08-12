@@ -7,7 +7,7 @@
 #import "fishhook.h"
 
 // ==========================================
-// SPEEDHACK ENGINE (PURE RELATIVE FRAME DELTA)
+// SPEEDHACK ENGINE (EVENT-BOUNDARY RESET)
 // ==========================================
 
 static float speed_factor = 1.0f;
@@ -18,7 +18,7 @@ static int (*orig_gettimeofday)(struct timeval *tv, struct timezone *tz);
 static CFAbsoluteTime (*orig_CFAbsoluteTimeGetCurrent)(void);
 static uint64_t (*orig_mach_absolute_time)(void);
 
-// Trackers từng frame (Không lưu mốc tích lũy dài hạn)
+// Frame Trackers
 static uint64_t last_real_mach = 0;
 static uint64_t current_fake_mach = 0;
 
@@ -33,15 +33,13 @@ FOUNDATION_EXPORT void set_speed_factor(float factor) {
     
     speed_factor = factor;
     
-    // Nếu chuyển về 1.0x, reset bộ đếm frame về 0 để dùng Direct Bypass của iOS
-    if (factor == 1.0f) {
-        last_real_mach = 0;
-        current_fake_mach = 0;
-        last_real_cf = 0;
-        current_fake_cf = 0;
-        last_real_tv = (struct timeval){0, 0};
-        current_fake_tv = (struct timeval){0, 0};
-    }
+    // Reset toàn bộ trackers khi đổi tốc độ
+    last_real_mach = 0;
+    current_fake_mach = 0;
+    last_real_cf = 0;
+    current_fake_cf = 0;
+    last_real_tv = (struct timeval){0, 0};
+    current_fake_tv = (struct timeval){0, 0};
     
     os_unfair_lock_unlock(&speed_lock);
 }
@@ -68,8 +66,8 @@ int my_gettimeofday(struct timeval *tv, struct timezone *tz) {
         double delta = (tv->tv_sec - last_real_tv.tv_sec) + 
                        (tv->tv_usec - last_real_tv.tv_usec) / 1000000.0;
         
-        // Nếu khoảng chênh lệch quá lớn (> 2.0 giây - chứng tỏ vừa thoát app vào lại), reset mốc frame mới lập tức
-        if (delta > 2.0 || delta < 0) {
+        // Ngưỡng phát hiện ngắt sự kiện / thoát app: delta > 0.3s hoặc delta < 0
+        if (delta > 0.3 || delta < 0) {
             last_real_tv = *tv;
             current_fake_tv = *tv;
         } else if (delta > 0) {
@@ -108,8 +106,8 @@ CFAbsoluteTime my_CFAbsoluteTimeGetCurrent(void) {
     } else {
         double delta = real_now - last_real_cf;
         
-        // Phát hiện thoát app / mở lại sự kiện mới (delta > 2s) -> Bắt nhịp thời gian thực mới ngay
-        if (delta > 2.0 || delta < 0) {
+        // Ngưỡng phát hiện ngắt sự kiện: delta > 0.3s hoặc delta < 0
+        if (delta > 0.3 || delta < 0) {
             last_real_cf = real_now;
             current_fake_cf = real_now;
         } else if (delta > 0) {
@@ -140,13 +138,12 @@ uint64_t my_mach_absolute_time(void) {
         if (real_now > last_real_mach) {
             uint64_t delta = real_now - last_real_mach;
             
-            // Quy đổi Mach Time ra giây để kiểm tra khoảng ngắt nhịp (chống dồn)
             mach_timebase_info_data_t info;
             mach_timebase_info(&info);
             double delta_sec = (double)delta * info.numer / info.denom / 1e9;
 
-            if (delta_sec > 2.0) {
-                // Thoát app / mở lại -> Reset lại mốc mới chuẩn xác
+            // Ngưỡng phát hiện ngắt sự kiện: delta > 0.3s
+            if (delta_sec > 0.3) {
                 last_real_mach = real_now;
                 current_fake_mach = real_now;
             } else {
