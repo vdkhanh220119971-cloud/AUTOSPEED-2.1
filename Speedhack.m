@@ -6,11 +6,11 @@
 #import "fishhook.h"
 
 // ===================================================
-// CẤU HÌNH BẬT / TẮT TỪNG HÀM (ĐÃ BẬT DUY NHẤT HOOK_CF_ABSOLUTE_TIME)
+// CẤU HÌNH BẬT / TẮT TỪNG HÀM (ĐÃ BẬT DUY NHẤT HOOK_CLOCK_GETTIME)
 // ===================================================
 #define HOOK_MACH_ABSOLUTE_TIME   0   // Tắt
-#define HOOK_CF_ABSOLUTE_TIME     1   // BẬT (Tập trung hook CFAbsoluteTimeGetCurrent)
-#define HOOK_CLOCK_GETTIME        0   // Tắt
+#define HOOK_CF_ABSOLUTE_TIME     0   // Tắt
+#define HOOK_CLOCK_GETTIME        1   // BẬT (Tập trung hook clock_gettime)
 
 static float speed_factor = 1.0f;
 static os_unfair_lock speed_lock = OS_UNFAIR_LOCK_INIT;
@@ -65,7 +65,7 @@ uint64_t my_mach_absolute_time(void) {
 #endif
 
 // ---------------------------------------------------
-// 2. HOOK CFABSOLUTETIMEGETCURRENT (ĐANG BẬT)
+// 2. HOOK CFABSOLUTETIMEGETCURRENT
 // ---------------------------------------------------
 #if HOOK_CF_ABSOLUTE_TIME
 static CFAbsoluteTime (*orig_CFAbsoluteTimeGetCurrent)(void) = NULL;
@@ -93,7 +93,7 @@ CFAbsoluteTime my_CFAbsoluteTimeGetCurrent(void) {
 #endif
 
 // ---------------------------------------------------
-// 3. HOOK CLOCK_GETTIME
+// 3. HOOK CLOCK_GETTIME (ĐANG BẬT)
 // ---------------------------------------------------
 #if HOOK_CLOCK_GETTIME
 static int (*orig_clock_gettime)(clockid_t clk_id, struct timespec *tp) = NULL;
